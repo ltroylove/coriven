@@ -1,0 +1,205 @@
+import type Anthropic from '@anthropic-ai/sdk'
+import { anthropic, CHAT_MODEL_SMART } from '@/lib/anthropic'
+import { createServiceClient } from '@/lib/supabase/server'
+import { TOOL_REGISTRY } from '@/lib/chat/tools/registry'
+import { executeToolHandler } from '@/lib/chat/tools/handlers'
+import type { ChatMessage, TextBlock, ToolUseBlock, ToolResultBlock } from '@/components/chat/types'
+
+export type SSEEvent =
+  | { type: 'text_delta'; delta: string }
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error: boolean }
+  | { type: 'done' }
+  | { type: 'error'; message: string }
+
+function buildSystemPrompt(disabledTools: string[]): string {
+  const now = new Date().toISOString()
+  let prompt = `You are a personal assistant that helps the user manage tasks and reminders.
+Today is ${now}.
+
+## How tasks work
+Tasks are the single source of truth. A "reminder" is just a task with a \`remind_at\` time set.
+When the user says "remind me about X", always call list_tasks first to check if a task for X already exists.
+- If a matching task is found: call update_task to set remind_at (and recurrence_type if they want it to repeat).
+- If no task is found: call create_task with remind_at set.
+Never ask the user to repeat information that's already in an existing task.
+
+## Reminders
+- remind_at: when to notify the user (ISO 8601)
+- recurrence_type: none | daily | weekdays | weekly | monthly | yearly
+- snoozed_until: set automatically when the user snoozes
+
+## General rules
+- Use ISO 8601 for all datetimes (e.g. "2026-06-20T09:00:00").
+- Be concise. After using a tool, confirm in one sentence what you did.
+- Never invent task IDs — always get them from list_tasks first.`
+
+  if (disabledTools.length > 0) {
+    prompt += `
+
+The following tools are currently disabled: ${disabledTools.join(', ')}.
+If the user asks you to do something that requires one of these disabled tools, do NOT attempt to use it.
+Instead, tell them: "To do that, you'll need to enable [tool name] in Settings → Tools."
+Do not pretend you can perform the action.`
+  }
+
+  return prompt
+}
+
+function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] {
+  const result: Anthropic.MessageParam[] = []
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      const text = msg.content
+        .filter((b): b is TextBlock => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+      if (text) result.push({ role: 'user', content: text })
+    } else {
+      const textBlocks = msg.content.filter((b): b is TextBlock => b.type === 'text')
+      const toolUseBlocks = msg.content.filter((b): b is ToolUseBlock => b.type === 'tool_use')
+      const toolResultBlocks = msg.content.filter((b): b is ToolResultBlock => b.type === 'tool_result')
+
+      if (toolUseBlocks.length > 0) {
+        const assistantContent: Anthropic.ContentBlockParam[] = [
+          ...textBlocks.map(b => ({ type: 'text' as const, text: b.text })),
+          ...toolUseBlocks.map(b => ({
+            type: 'tool_use' as const,
+            id: b.id,
+            name: b.name,
+            input: b.input,
+          })),
+        ]
+        if (assistantContent.length > 0) {
+          result.push({ role: 'assistant', content: assistantContent })
+        }
+        if (toolResultBlocks.length > 0) {
+          result.push({
+            role: 'user',
+            content: toolResultBlocks.map(b => ({
+              type: 'tool_result' as const,
+              tool_use_id: b.tool_use_id,
+              content: b.content,
+              ...(b.is_error ? { is_error: b.is_error } : {}),
+            })),
+          })
+        }
+      } else {
+        const text = textBlocks.map(b => b.text).join('\n')
+        if (text) result.push({ role: 'assistant', content: text })
+      }
+    }
+  }
+
+  return result
+}
+
+async function loadToolPermissions(userId: string): Promise<{ enabled: Anthropic.Tool[]; disabledNames: string[] }> {
+  const db = createServiceClient()
+  const { data } = await db
+    .from('tool_permissions')
+    .select('tool_name, enabled')
+    .eq('user_id', userId)
+
+  if (!data || data.length === 0) return { enabled: [], disabledNames: [] }
+
+  const enabled = data
+    .filter(row => row.enabled)
+    .map(row => TOOL_REGISTRY[row.tool_name as keyof typeof TOOL_REGISTRY])
+    .filter(Boolean) as Anthropic.Tool[]
+
+  const disabledNames = data
+    .filter(row => !row.enabled)
+    .map(row => row.tool_name)
+
+  return { enabled, disabledNames }
+}
+
+async function saveMessage(
+  userId: string,
+  conversationId: string,
+  role: 'user' | 'assistant',
+  content: string,
+  toolCalls?: Anthropic.ToolUseBlock[],
+): Promise<void> {
+  const db = createServiceClient()
+  await db.from('conversation_messages').insert({
+    user_id: userId,
+    conversation_id: conversationId,
+    role,
+    content,
+    tool_calls: toolCalls && toolCalls.length > 0 ? (toolCalls as unknown as import('@/types/supabase').Json) : null,
+  })
+}
+
+export async function runChatEngine({
+  userId,
+  conversationId,
+  clientMessages,
+  send,
+}: {
+  userId: string
+  conversationId: string
+  clientMessages: ChatMessage[]
+  send: (event: SSEEvent) => void
+}): Promise<void> {
+  const { enabled: enabledTools, disabledNames } = await loadToolPermissions(userId)
+  const system = buildSystemPrompt(disabledNames)
+  const anthropicMessages = toAnthropicMessages(clientMessages)
+
+  // Persist the new user message (last item in clientMessages)
+  const lastUserMsg = clientMessages[clientMessages.length - 1]
+  if (lastUserMsg?.role === 'user') {
+    const text = lastUserMsg.content
+      .filter((b): b is TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('')
+    await saveMessage(userId, conversationId, 'user', text)
+  }
+
+  const loopMessages = [...anthropicMessages]
+  let assistantText = ''
+  const assistantToolCalls: Anthropic.ToolUseBlock[] = []
+
+  for (let turn = 0; turn < 10; turn++) {
+    const stream = anthropic.messages.stream({
+      model: CHAT_MODEL_SMART,
+      max_tokens: 4096,
+      system,
+      messages: loopMessages,
+      ...(enabledTools.length > 0 ? { tools: enabledTools } : {}),
+    })
+
+    stream.on('text', (delta: string) => {
+      assistantText += delta
+      send({ type: 'text_delta', delta })
+    })
+
+    const finalMsg = await stream.finalMessage()
+    loopMessages.push({ role: 'assistant', content: finalMsg.content })
+
+    if (finalMsg.stop_reason !== 'tool_use') break
+
+    const toolResults: Anthropic.ToolResultBlockParam[] = []
+    for (const block of finalMsg.content) {
+      if (block.type !== 'tool_use') continue
+      assistantToolCalls.push(block)
+      send({ type: 'tool_use', id: block.id, name: block.name, input: block.input as Record<string, unknown> })
+
+      const result = await executeToolHandler(block.name, block.input as Record<string, unknown>, userId)
+      send({ type: 'tool_result', tool_use_id: block.id, content: result.content, is_error: result.is_error })
+
+      toolResults.push({
+        type: 'tool_result',
+        tool_use_id: block.id,
+        content: result.content,
+        ...(result.is_error ? { is_error: result.is_error } : {}),
+      })
+    }
+
+    loopMessages.push({ role: 'user', content: toolResults })
+  }
+
+  await saveMessage(userId, conversationId, 'assistant', assistantText, assistantToolCalls)
+}

@@ -1,0 +1,34 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@personal-assistant/types": "*",
+    "@anthropic-ai/sdk": "^0.105.0",
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "lucide-react": "^1.21.0",
+    "next": "^15.2.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^26.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.2.0",
+    "postcss": "^8.5.0",
+    "supabase": "^2.81.2",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.8.2"
+  }
+}
