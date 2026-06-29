@@ -23,6 +23,8 @@ relateddocuments:
 
 # Wave 1.3.1: Tray Reliability & Tauri Decision
 
+> ⛔ **SUPERSEDED (2026-06-29).** The Node.js Windows tray (`apps/tray`) was **removed** — see **ADR-012**. This wave's tray-reliability smoke and Tauri spike no longer apply. Tauri remains the only tray (ADR-003), to be built as a dedicated effort when prioritized. Kept for historical record only.
+
 ## Wave Overview
 
 | Field | Value |

@@ -10,9 +10,7 @@
     "dev": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/web",
     "lint": "npm run lint --workspace=apps/web",
-    "tray:dev": "npm run dev --workspace=apps/tray",
-    "tray:build": "npm run build --workspace=apps/tray",
-    "typecheck": "npm run typecheck --workspace=apps/web && npm run typecheck --workspace=packages/types && npm run typecheck --workspace=apps/tray",
+    "typecheck": "npm run typecheck --workspace=apps/web && npm run typecheck --workspace=packages/types",
     "test": "npm run test --workspace=packages/types && npm run test --workspace=apps/web"
   },
   "devDependencies": {

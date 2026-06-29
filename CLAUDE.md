@@ -7,14 +7,15 @@ An AI-powered personal assistant (product name: **Coriven**) — task management
 ```
 apps/
   web/    — Next.js 15 app (UI + API routes) → deployed to Vercel
-  tray/   — Node.js background daemon (Windows tray + notifications)
 packages/
-  types/  — shared TypeScript types across apps
+  types/  — shared TypeScript types
 supabase/
   migrations/  — SQL-first DB migrations
 docs/
   planning/    — design docs and architecture decisions
 ```
+
+> The desktop tray is a **future Tauri app** (cross-platform thin shell over the API — see blueprint §13). The earlier Node.js Windows daemon (`apps/tray`) was removed; it is not being maintained.
 
 ## Key Docs
 
@@ -28,7 +29,7 @@ docs/
 - **Styling:** Tailwind CSS 4
 - **Database:** Supabase (Postgres + Auth)
 - **AI:** Anthropic Claude API with tool use
-- **Hosting:** Vercel (web) + local install (tray)
+- **Hosting:** Vercel (web); desktop tray is a future Tauri app
 
 ## Development Setup
 
@@ -38,9 +39,6 @@ npm install
 
 # Start the web app
 npm run dev
-
-# Start the tray daemon
-npm run tray:dev
 
 # Type check everything
 npm run typecheck

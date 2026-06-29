@@ -3,7 +3,7 @@ preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-06-29"
 lastupdated: "2026-06-29T00:00:00"
-version: "1.0"
+version: "2.0"
 type: adr
 status: Accepted
 domain: architecture
@@ -11,69 +11,65 @@ adrid: "ADR-012"
 deciders: "Roy Love"
 product:
   - "coriven"
-tags: [tray, tauri, timing, distribution]
+tags: [tray, tauri, node-daemon, removal]
 relateddocuments:
   - "docs/implementation/_main/epic-1-foundation-closeout.md"
-  - "docs/implementation/iterations/wave-1.3.1-tray-reliability-tauri-decision.md"
   - "docs/architecture/decisions/ADR-003 (in 04-Architecture.md)"
 ---
 
-# ADR-012: Tauri Migration Timing — Defer to Productization
+# ADR-012: Remove the Node.js Tray; Tauri Is the Only Tray
 
-**Status**: Accepted **Date**: 2026-06-29 **Deciders**: Roy Love **Related**: Wave 1.3.1 (Tray Reliability & Tauri Decision); ADR-003 (Tauri tray replaces the Node.js daemon); blueprint §13.4
+**Status**: Accepted **Date**: 2026-06-29 **Deciders**: Roy Love **Related**: ADR-003 (Tauri tray replaces the Node.js daemon); Wave 1.3.1; blueprint §13
+
+> **v2 (2026-06-29):** Supersedes this ADR's own v1 "defer Tauri, keep the Node daemon through Epics 1–6." The Node daemon is being **removed now**, not maintained.
 
 ---
 
 ## Context
 
-ADR-003 already accepted **Tauri** as the eventual tray shell (Windows + Mac from one codebase). Wave 1.3.1 asks the remaining question: **when** does the full Node.js → Tauri migration happen — now (Epic 1) or later (Productization)? The blueprint (§13.4) pre-approves either outcome and flags the one-time costs of going now.
-
-Relevant facts at decision time:
-- The **Node.js tray daemon works** and is a thin shell — verified in Wave 1.3.1: no local `getNextOccurrence`, no recurrence math, no hardcoded user data in `apps/tray/src/` (recurrence lives in `@personal-assistant/types`).
-- The reusable logic is in the **API + shared types**, not the tray shell — so the shell is cheap and disposable, and deferring its rewrite costs little.
-- Going to Tauri now carries one-time cost: a **Rust toolchain in CI**, **Apple Developer Program ($99/yr) + notarization** for the Mac `.app`, and a **Windows code-signing certificate** to avoid SmartScreen.
-- The owner is on **Windows**; there is **no Mac-user need yet**.
-- The product is **pre-revenue / solo**; signing + CI spend is not yet justified.
-- The Tauri spike (Rust prototype + native-notification PoC) was **not executed in Epic 1** — it requires a Rust toolchain and manual Windows-GUI verification, and running it now would be throwaway work if the full migration lands later anyway.
+ADR-003 accepted **Tauri** as the eventual cross-platform tray, with the Node.js Windows daemon (`apps/tray`) as a disposable interim shell. In practice the Node daemon kept generating drag: it surfaced in waves (1.3.1), bug fixes, and a "defer vs build" decision, and pulled attention toward a Windows-only artifact the user does not want to invest in or manually test. The reusable logic already lives in the API + `@personal-assistant/types`, so the Node shell carries little value.
 
 ## Considered Options
 
-- **Option 1: Go now** — migrate to Tauri during Epic 1 (run the spike, build the thin shell, set up signing/CI).
-- **Option 2: Defer to Productization (Epic 7)** — keep the working Node.js daemon through Epics 1–6; do the full Tauri migration + Mac build + signing when productizing.
+- **Option 1: Keep the Node daemon** (maintain/test it until Tauri) — the original ADR-012 v1 stance.
+- **Option 2: Remove the Node daemon now**; build the Tauri tray when tray work is prioritized; no desktop tray in the interim.
+- **Option 3: Build Tauri immediately** (Rust scaffold + native notifications now).
 
 ## Decision
 
-**We will DEFER the full Tauri migration to Productization (Epic 7).** The Node.js tray daemon remains the tray through Epics 1–6, retaining its verified thin-shell status. The Tauri spike and migration move into Epic 7 alongside the other distribution/signing work (Apple Developer, Windows cert, CI artifacts).
+**Remove the Node.js Windows daemon (`apps/tray`) now.** Tauri is the only tray going forward (per ADR-003), to be built as a dedicated effort when tray work is prioritized. Until then there is **no desktop tray**; the web app is the surface, and reminder/briefing delivery via a desktop tray is pending the Tauri build (Web Push via PWA remains the mobile path — Epic 7).
 
 ### Why This Choice
 
-1. **The Node tray already works and is thin** — no functional gap to close now; web/tray/mobile already share backend logic.
-2. **Costs land when they pay off** — signing fees + CI complexity + Mac support are Productization concerns, not Phase-1 ones; deferring avoids paying for capabilities no one uses yet.
-3. **Low switching cost later** — because logic lives in the API/types (not the shell), the eventual Tauri port stays cheap; nothing about deferring increases its cost.
-4. **Avoids throwaway spike work** — running the Rust/notification PoC now, then again at migration time, is wasted effort.
+1. **Stops the interference.** The Node daemon repeatedly diverted focus; removing it keeps work on the actual product (web app, memory, goals).
+2. **No real loss.** It was a thin Windows-only shell; all durable logic is in the API/shared types. Nothing of value is deleted.
+3. **Tauri is still the plan.** ADR-003 stands — when tray work is scheduled, it's built as a clean Tauri thin shell (auth, poll `/api/tasks/due`, native notifications, tray menu, autostart), cross-platform from the start.
 
 ## Consequences
 
 ### Positive
-- No new spend or CI complexity during Epics 1–6.
-- Tray reminders keep working via the existing daemon.
-- Tauri work is consolidated with related distribution work in Epic 7.
+- No Windows-only daemon to maintain, test, or reason about.
+- Monorepo simplifies to `apps/web` + `packages/types`.
+- Clean slate for Tauri when it's time.
 
 ### Negative
-- **Mac is not supported until Epic 7** (acceptable — owner is on Windows).
-- The Node.js daemon must keep honoring the thin-shell rule until replaced (enforced by Wave 1.3.1 verification; re-check in future tray changes).
+- **No desktop notifications until the Tauri tray is built.** Reminders are visible in the web app only in the interim.
 
 ### Mitigation
-- Epic 7 (Productization) explicitly carries the Tauri migration (it already notes this in its out-of-scope/Tauri line). The spike becomes the first step of that work.
-- Keep `getNextOccurrence` (and any future shared logic) in `@personal-assistant/types` so the eventual port stays a shell swap.
+- `getNextOccurrence` and other shared logic remain in `@personal-assistant/types`; `/api/tasks/due` remains, so the future Tauri shell stays thin.
+- Schedule the Tauri build as its own effort (candidate: Epic 7 / Productization, or sooner if desktop reminders are needed).
+
+## What was removed
+- `apps/tray/` (Node.js daemon: systray2 + node-notifier).
+- Root `tray:dev` / `tray:build` scripts and the tray entry in the `typecheck` script.
+- Tray-related `.gitignore` entries and the local `apps/tray/.env` config.
 
 ---
 
 ## References
-- ADR-003 (Tauri tray replaces the Node.js daemon) — in `docs/architecture/_main/04-Architecture.md`
-- Wave 1.3.1 — `docs/implementation/iterations/wave-1.3.1-tray-reliability-tauri-decision.md`
-- Master blueprint §13 (Tray App), §13.4 (Signing & Distribution)
-- Epic 7 (Productization) — `docs/implementation/_main/epic-7-productization.md`
+- ADR-003 (Tauri tray replaces the Node.js daemon) — `docs/architecture/_main/04-Architecture.md`
+- Master blueprint §13 (Tray App)
+- Wave 1.3.1 (superseded) — `docs/implementation/iterations/wave-1.3.1-tray-reliability-tauri-decision.md`
 
 ---
 
