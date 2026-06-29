@@ -1,0 +1,19 @@
+#!/bin/sh
+# Block direct pushes to main. Changes must land via a PR from development.
+# Server-side protection requires GitHub Pro for private repos; this is the
+# local equivalent so the documented workflow is enforced on this machine.
+#
+# Enable (per clone): git config core.hooksPath .githooks
+
+protected="refs/heads/main"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "$protected" ]; then
+    echo "✋ Direct pushes to 'main' are blocked."
+    echo "   Work on 'development', then open a PR:"
+    echo "     gh pr create --base main --head development"
+    exit 1
+  fi
+done
+
+exit 0
