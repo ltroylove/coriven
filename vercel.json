@@ -1,3 +1,8 @@
 {
-  "installCommand": "rm -rf package-lock.json && npm install"
+  "build": {
+    "env": {
+      "NODE_VERSION": "22"
+    }
+  },
+  "installCommand": "npm install"
 }

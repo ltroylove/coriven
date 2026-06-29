@@ -13,6 +13,10 @@
     "typecheck": "npm run typecheck --workspace=apps/web && npm run typecheck --workspace=packages/types",
     "test": "npm run test --workspace=packages/types && npm run test --workspace=apps/web"
   },
+  "optionalDependencies": {
+    "@tailwindcss/oxide-linux-x64-gnu": "4.3.1",
+    "lightningcss-linux-x64-gnu": "1.32.0"
+  },
   "devDependencies": {
     "typescript": "^5.8.2"
   }
