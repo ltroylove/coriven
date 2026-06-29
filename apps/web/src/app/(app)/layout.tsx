@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="h-screen flex flex-col bg-gray-950 text-white">
       <nav className="shrink-0 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <span className="font-semibold text-white">Personal Assistant</span>
+          <span className="font-semibold text-white">Coriven</span>
           <div className="flex items-center gap-4 text-sm">
             <a href="/tasks" className="text-gray-400 hover:text-white transition-colors">Tasks</a>
             <a href="/chat" className="text-gray-400 hover:text-white transition-colors">Chat</a>
