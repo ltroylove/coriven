@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { classifyAndWriteMemory } from '@/lib/memory/writer'
 import { assembleContext } from '@/lib/memory/context'
 import type { Json } from '@/types/supabase'
+import type { SentinelPackage } from '@personal-assistant/types'
 
 const SENTINEL_TTL_SECONDS = 86400
 const SENTINEL_KEY_PREFIX = 'sentinel:context:'
@@ -141,4 +142,49 @@ async function writePackageToSupabase(userId: string, pkg: unknown): Promise<voi
   } catch (err) {
     console.error('[sentinel] Supabase write failed', { event: 'sentinel_write_fail', userId, err })
   }
+}
+
+// ── Package reads ────────────────────────────────────────────────────────────
+
+const SENTINEL_PACKAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24h
+
+export async function readSentinelPackage(userId: string): Promise<SentinelPackage | null> {
+  try {
+    const redis = await getRedisClient()
+    if (!redis) return null
+    const raw = await redis.get(`${SENTINEL_KEY_PREFIX}${userId}`)
+    if (!raw) return null
+    const pkg = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!isValidPackage(pkg)) return null
+    return pkg as SentinelPackage
+  } catch (err) {
+    console.warn('[sentinel] Upstash read failed', { event: 'sentinel_read_upstash_fail', userId, err })
+    return null
+  }
+}
+
+export async function readSentinelPackageFromSupabase(userId: string): Promise<SentinelPackage | null> {
+  try {
+    const supabase = createServiceClient()
+    const { data } = await supabase
+      .from('sentinel_context')
+      .select('package, built_at')
+      .eq('user_id', userId)
+      .single()
+    if (!data?.package || !data.built_at) return null
+    // Reject stale packages
+    const age = Date.now() - new Date(data.built_at).getTime()
+    if (age > SENTINEL_PACKAGE_MAX_AGE_MS) return null
+    if (!isValidPackage(data.package)) return null
+    return data.package as unknown as SentinelPackage
+  } catch (err) {
+    console.warn('[sentinel] Supabase package read failed', { userId, err })
+    return null
+  }
+}
+
+function isValidPackage(pkg: unknown): boolean {
+  if (!pkg || typeof pkg !== 'object') return false
+  const p = pkg as Record<string, unknown>
+  return 'built_at' in p
 }

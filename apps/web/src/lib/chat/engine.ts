@@ -4,8 +4,8 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { TOOL_REGISTRY } from '@/lib/chat/tools/registry'
 import { executeToolHandler } from '@/lib/chat/tools/handlers'
 import type { ChatMessage, TextBlock, ToolUseBlock, ToolResultBlock } from '@/components/chat/types'
-import { assembleContext } from '@/lib/memory/context'
-import type { AssembledContext } from '@/lib/memory/context'
+import { loadMemoryContext } from '@/lib/memory/context-loader'
+import type { MemoryContext } from '@/lib/memory/context-loader'
 import { runSentinel } from '@/lib/memory/sentinel'
 
 export type SSEEvent =
@@ -15,7 +15,7 @@ export type SSEEvent =
   | { type: 'done' }
   | { type: 'error'; message: string }
 
-function buildSystemPrompt(disabledTools: string[], memoryContext?: AssembledContext): string {
+function buildSystemPrompt(disabledTools: string[], memoryContext?: MemoryContext): string {
   const now = new Date().toISOString()
   let prompt = `You are a personal assistant that helps the user manage tasks and reminders.
 Today is ${now}.
@@ -183,17 +183,17 @@ export async function runChatEngine({
 }): Promise<void> {
   const { enabled: enabledTools, disabledNames } = await loadToolPermissions(userId)
 
-  // Assemble memory context (graceful — never blocks chat on failure)
-  let memoryContext: AssembledContext | undefined
+  // Load memory context via three-tier degradation (graceful — never blocks chat on failure)
+  let memoryContext: MemoryContext | undefined
   try {
     const lastUserMessage = clientMessages.findLast(m => m.role === 'user')
     const lastText = lastUserMessage?.content
       .filter((b): b is TextBlock => b.type === 'text')
       .map(b => b.text)
       .join(' ') ?? ''
-    memoryContext = await assembleContext(userId, lastText)
+    memoryContext = await loadMemoryContext(userId, lastText)
   } catch (err) {
-    console.warn('[engine] Memory context assembly failed; continuing without memory', err)
+    console.warn('[engine] Memory context load failed; continuing without memory', err)
   }
 
   const system = buildSystemPrompt(disabledNames, memoryContext)
