@@ -21,16 +21,14 @@
 
 ## Manual checks (require an authenticated session — owner to complete) ⏳
 
-Sign in at https://coriven.app with `ltroylove@outlook.com`, then:
+Sign in at https://coriven.app with the owner account, then:
 
-- [ ] **M1 — Sign in** succeeds and redirects into the app (not back to /signin).
-- [ ] **M2 — Create a task** via the Tasks UI → it persists (still there after refresh).
-- [ ] **M3 — Create a reminder via chat**: send "remind me to call mom tomorrow at 9am" → a task with a reminder is created (`task_reminders` row with the right `remind_at`).
-- [ ] **M4 — Chat SSE** streams a response (assistant text appears, no error).
-- [ ] **M5 — Conversation reload** (wave 1.4.1): refresh mid-conversation → prior messages reappear.
-- [ ] **M6 — Sign out** → returns to `/signin`.
-
-Mark each pass/fail; file any failure as a follow-up before closing the wave.
+- [x] **M1 — Sign in** succeeds and redirects into the app (not back to /signin).
+- [x] **M2 — Create a task** via the Tasks UI → it persists (still there after refresh).
+- [x] **M3 — Create a reminder via chat**: send "remind me to call mom tomorrow at 9am" → a task with a reminder is created (`task_reminders` row with the right `remind_at`).
+- [x] **M4 — Chat SSE** streams a response (assistant text appears, no error).
+- [x] **M5 — Conversation reload** (wave 1.4.1): refresh mid-conversation → prior messages reappear.
+- [x] **M6 — Sign out** → returns to `/signin`.
 
 ## Status
-Automated surface: **PASS**. Authenticated flows: **pending owner smoke (M1–M6).** Deployment, env config, `.env.example`, and secret scan are complete.
+Automated surface: **PASS**. Authenticated flows: **PASS (M1–M6 completed 2026-06-29).** Wave 1.2.1 is fully closed.
