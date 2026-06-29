@@ -16,7 +16,6 @@
   },
   "references": [
     { "path": "./apps/web" },
-    { "path": "./apps/tray" },
     { "path": "./packages/types" }
   ],
   "exclude": ["node_modules"]

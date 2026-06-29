@@ -5,7 +5,7 @@ datecreated: "2026-06-29"
 lastupdated: "2026-06-29T00:00:00"
 version: "1.0"
 type: wave
-status: Planning
+status: Superseded
 domain: implementation
 product:
   - coriven
@@ -23,6 +23,8 @@ relateddocuments:
 
 # Wave 1.3.1: Tray Reliability & Tauri Decision
 
+> ⛔ **SUPERSEDED (2026-06-29).** The Node.js Windows tray (`apps/tray`) was **removed** — see **ADR-012**. This wave's tray-reliability smoke and Tauri spike no longer apply. Tauri remains the only tray (ADR-003), to be built as a dedicated effort when prioritized. Kept for historical record only.
+
 ## Wave Overview
 
 | Field | Value |
@@ -30,7 +32,7 @@ relateddocuments:
 | Wave ID | 1.3.1 |
 | Feature | 1.3 — Tray Reliability & Tauri Decision |
 | Epic | 1 — Foundation Closeout |
-| Status | Planning |
+| Status | Superseded — see ADR-012 v2 |
 | Scope | Verify the Node.js tray is reliable with the corrected API; confirm `packages/types` is the single recurrence source; spike the Tauri thin-shell approach; produce a written go/defer decision on Tauri migration timing. |
 | Wave Goal | The tray reliably fires reminders via the corrected `/api/tasks/due` endpoint; the Tauri migration is either begun (if the spike proves low-cost) or formally deferred to Productization with a documented rationale — either outcome satisfies ADR-003. |
 
