@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { getNextOccurrence, type RecurrenceType } from '@personal-assistant/types'
 import { CONFIG } from './config'
 import { getValidSession } from './auth'
 
@@ -61,14 +62,16 @@ export async function fireReminder(id: string, recurrenceType: string, remindAt:
 
   const now = new Date().toISOString()
 
-  if (recurrenceType === 'none') {
-    await db.from('task_reminders').update({ last_fired_at: now }).eq('id', id)
-    return
-  }
+  // getNextOccurrence (shared in @personal-assistant/types) returns null for
+  // non-recurring reminders AND when the recurrence has passed its end date.
+  const next = getNextOccurrence({
+    remind_at: remindAt,
+    recurrence_type: recurrenceType as RecurrenceType,
+    recurrence_end_at: recurrenceEndAt,
+  })
 
-  const next = getNextOccurrence(recurrenceType, remindAt)
-  if (!next || (recurrenceEndAt && next > new Date(recurrenceEndAt))) {
-    // Recurrence ended — mark as fired only
+  if (!next) {
+    // Non-recurring or recurrence ended — mark as fired only.
     await db.from('task_reminders').update({ last_fired_at: now }).eq('id', id)
     return
   }
@@ -78,29 +81,4 @@ export async function fireReminder(id: string, recurrenceType: string, remindAt:
     remind_at: next.toISOString(),
     snoozed_until: null,
   }).eq('id', id)
-}
-
-function getNextOccurrence(recurrenceType: string, remindAt: string): Date | null {
-  const base = new Date(remindAt)
-  switch (recurrenceType) {
-    case 'daily':
-      base.setDate(base.getDate() + 1)
-      break
-    case 'weekdays':
-      base.setDate(base.getDate() + 1)
-      while (base.getDay() === 0 || base.getDay() === 6) base.setDate(base.getDate() + 1)
-      break
-    case 'weekly':
-      base.setDate(base.getDate() + 7)
-      break
-    case 'monthly':
-      base.setMonth(base.getMonth() + 1)
-      break
-    case 'yearly':
-      base.setFullYear(base.getFullYear() + 1)
-      break
-    default:
-      return null
-  }
-  return base
 }

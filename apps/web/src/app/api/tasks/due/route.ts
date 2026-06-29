@@ -11,18 +11,18 @@ export async function GET() {
   const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
   const nowIso = now.toISOString()
 
+  // Reminders live in their own table (task_reminders), not on tasks.
   const service = createServiceClient()
   const { data, error } = await service
-    .from('tasks')
-    .select('*')
+    .from('task_reminders')
+    .select('*, task:tasks(title, status)')
     .eq('user_id', user.id)
-    .not('remind_at', 'is', null)
     .lte('remind_at', in24h)
-    .not('status', 'in', '("done","cancelled")')
-    .or(`last_fired_at.is.null,last_fired_at.lt.remind_at`)
     .or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`)
+    .not('task.status', 'in', '("done","cancelled")')
     .order('remind_at', { ascending: true })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  // Drop reminders whose task was filtered out by the status check above.
+  return NextResponse.json((data ?? []).filter((r) => r.task !== null))
 }
