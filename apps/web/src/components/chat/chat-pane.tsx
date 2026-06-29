@@ -30,13 +30,21 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  // Resolve conversation ID and load history on mount
+  // Resolve conversation ID and load history on mount.
+  // Deduplication: persisted messages have stable DB-assigned UUIDs; any
+  // in-session SSE messages that share an id (e.g. from an optimistic add)
+  // are filtered out before merging to prevent duplicates (Story 1.4.1.1).
   useEffect(() => {
     if (!convIdRef.current) {
       convIdRef.current = getOrCreatePanelConvId()
     }
     getChatHistory(convIdRef.current).then(history => {
-      setMessages(history)
+      setMessages(prev => {
+        if (prev.length === 0) return history
+        const existingIds = new Set(history.map(m => m.id))
+        const newOnly = prev.filter(m => !existingIds.has(m.id))
+        return [...history, ...newOnly]
+      })
       setIsLoadingHistory(false)
     })
   }, [])
@@ -146,10 +154,27 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex-1 overflow-y-auto">
+      {/* Scroll region — aria-live="polite" so screen readers announce newly
+          appended messages without interrupting the user (UX Pass 6 §7, WCAG 2.1 AA).
+          aria-busy conveys the loading state to assistive technology. */}
+      <div
+        className="flex-1 overflow-y-auto"
+        aria-live="polite"
+        aria-busy={isLoadingHistory}
+        aria-label="Conversation messages"
+      >
         {isLoadingHistory ? (
-          <div className="h-full flex items-center justify-center">
-            <span className="text-xs text-gray-600">Loading...</span>
+          /* role="status" + aria-label gives screen readers a meaningful
+             announcement while history is being fetched (UX Pass 5 loading state).
+             motion-safe: guards the pulse so prefers-reduced-motion is respected. */
+          <div
+            role="status"
+            aria-label="Loading conversation history"
+            className="h-full flex items-center justify-center"
+          >
+            <span className="text-xs text-gray-600 motion-safe:animate-pulse">
+              Loading…
+            </span>
           </div>
         ) : isEmpty ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-8">
@@ -175,7 +200,8 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
                   <div className="w-1.5 h-5 rounded-full bg-emerald-500/40 mt-0.5" />
                 </div>
                 <div className="pt-6">
-                  <span className="inline-block w-[2px] h-4 bg-emerald-400 align-middle animate-[blink_1s_step-end_infinite]" />
+                  {/* motion-safe: respects prefers-reduced-motion for the cursor blink */}
+                  <span className="inline-block w-[2px] h-4 bg-emerald-400 align-middle motion-safe:animate-[blink_1s_step-end_infinite]" />
                 </div>
               </div>
             )}

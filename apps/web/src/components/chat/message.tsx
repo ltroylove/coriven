@@ -13,7 +13,9 @@ function ToolCallCard({ block, result }: { block: ToolUseBlock; result?: ToolRes
     <div className="my-3 rounded-lg border border-amber-800/40 bg-amber-950/20 overflow-hidden text-xs">
       <button
         onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-amber-950/30 transition-colors"
+        aria-label={`Tool used: ${block.name}. ${expanded ? 'Collapse' : 'Expand'} details`}
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-amber-950/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
       >
         <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
         <span className="font-mono text-amber-300 font-medium">{block.name}</span>
@@ -38,8 +40,12 @@ function ToolCallCard({ block, result }: { block: ToolUseBlock; result?: ToolRes
             </pre>
           </div>
           {hasResult && (
-            <div className="px-3 py-2 border-t border-amber-800/20 bg-black/10">
+            <div
+              className="px-3 py-2 border-t border-amber-800/20 bg-black/10"
+              aria-label={`Tool result for ${block.name}: ${isError ? 'error' : 'success'}`}
+            >
               <p className={`uppercase tracking-widest text-[10px] mb-1 ${isError ? 'text-red-500/60' : 'text-emerald-600/60'}`}>
+                {/* Text label accompanies icon — meaning not conveyed by color alone (WCAG 1.4.1) */}
                 result
               </p>
               <pre className={`font-mono text-[11px] whitespace-pre-wrap break-all ${isError ? 'text-red-300/80' : 'text-emerald-200/80'}`}>
@@ -106,13 +112,13 @@ function AssistantMessage({ message, isStreaming }: { message: ChatMessage; isSt
           <p key={i} className="text-sm text-gray-200 leading-7 whitespace-pre-wrap">
             {b.text}
             {isStreaming && i === textBlocks.length - 1 && (
-              <span className="inline-block w-[2px] h-4 bg-emerald-400 ml-0.5 align-middle animate-[blink_1s_step-end_infinite]" />
+              <span className="inline-block w-[2px] h-4 bg-emerald-400 ml-0.5 align-middle motion-safe:animate-[blink_1s_step-end_infinite]" aria-hidden="true" />
             )}
           </p>
         ))}
 
         {isStreaming && textBlocks.length === 0 && toolUseBlocks.length === 0 && (
-          <span className="inline-block w-[2px] h-4 bg-emerald-400 align-middle animate-[blink_1s_step-end_infinite]" />
+          <span className="inline-block w-[2px] h-4 bg-emerald-400 align-middle motion-safe:animate-[blink_1s_step-end_infinite]" aria-hidden="true" />
         )}
 
         <span className="text-[10px] text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity block mt-2">

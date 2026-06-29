@@ -56,19 +56,21 @@ export function Composer({ onSend, isStreaming, onStop, disabled }: Props) {
             {isStreaming ? (
               <button
                 onClick={onStop}
-                className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors text-white"
+                aria-label="Stop generating"
+                className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
                 title="Stop generating"
               >
-                <Square className="w-3 h-3 fill-current" />
+                <Square className="w-3 h-3 fill-current" aria-hidden="true" />
               </button>
             ) : (
               <button
                 onClick={handleSend}
                 disabled={!value.trim() || disabled}
-                className="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-600 transition-colors text-white"
+                aria-label="Send message"
+                className="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-600 transition-colors text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                 title="Send (Enter)"
               >
-                <ArrowUp className="w-3.5 h-3.5" />
+                <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             )}
           </div>
