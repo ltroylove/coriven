@@ -148,6 +148,10 @@ async function handleDeleteTask(input: Input, userId: string): Promise<HandlerRe
   return { content: `Task ${String(input.id)} deleted`, is_error: false }
 }
 
+async function handleNotImplemented(_input: Input, _userId: string): Promise<HandlerResult> {
+  return { content: 'This memory tool is not yet implemented', is_error: true }
+}
+
 const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<HandlerResult>> = {
   create_task: handleCreateTask,
   update_task: handleUpdateTask,
@@ -156,6 +160,11 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   remove_reminder: handleRemoveReminder,
   snooze_reminder: handleSnoozeReminder,
   delete_task: handleDeleteTask,
+  save_memory: handleNotImplemented,
+  recall_memories: handleNotImplemented,
+  upsert_entity: handleNotImplemented,
+  update_user_context: handleNotImplemented,
+  summarize_conversation: handleNotImplemented,
 }
 
 export async function executeToolHandler(
