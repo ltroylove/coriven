@@ -4,6 +4,8 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { TOOL_REGISTRY } from '@/lib/chat/tools/registry'
 import { executeToolHandler } from '@/lib/chat/tools/handlers'
 import type { ChatMessage, TextBlock, ToolUseBlock, ToolResultBlock } from '@/components/chat/types'
+import { assembleContext } from '@/lib/memory/context'
+import type { AssembledContext } from '@/lib/memory/context'
 
 export type SSEEvent =
   | { type: 'text_delta'; delta: string }
@@ -12,7 +14,7 @@ export type SSEEvent =
   | { type: 'done' }
   | { type: 'error'; message: string }
 
-function buildSystemPrompt(disabledTools: string[]): string {
+function buildSystemPrompt(disabledTools: string[], memoryContext?: AssembledContext): string {
   const now = new Date().toISOString()
   let prompt = `You are a personal assistant that helps the user manage tasks and reminders.
 Today is ${now}.
@@ -33,6 +35,40 @@ Never ask the user to repeat information that's already in an existing task.
 - Use ISO 8601 for all datetimes (e.g. "2026-06-20T09:00:00").
 - Be concise. After using a tool, confirm in one sentence what you did.
 - Never invent task IDs — always get them from list_tasks first.`
+
+  if (memoryContext) {
+    if (memoryContext.entityProfiles.length > 0) {
+      prompt += '\n\n## What I know about the people, places, and projects in your life\n'
+      for (const e of memoryContext.entityProfiles) {
+        const aliases = e.aliases.length > 0 ? ` (also known as: ${e.aliases.join(', ')})` : ''
+        prompt += `- **${e.name}**${aliases} [${e.type}]${e.description ? ': ' + e.description : ''}\n`
+      }
+    }
+
+    if (memoryContext.memories.length > 0) {
+      prompt += '\n## Relevant memories\n'
+      for (const m of memoryContext.memories) {
+        prompt += `- ${m.content}\n`
+      }
+    }
+
+    if (memoryContext.summaries.length > 0) {
+      prompt += '\n## Recent conversation summaries\n'
+      for (const s of memoryContext.summaries) {
+        prompt += `- ${s.summary}\n`
+      }
+    }
+
+    if (memoryContext.userContext) {
+      const prefs = Object.entries(memoryContext.userContext.preferences)
+      const facts = Object.entries(memoryContext.userContext.facts)
+      if (prefs.length > 0 || facts.length > 0) {
+        prompt += '\n## User preferences and facts\n'
+        for (const [k, v] of prefs) prompt += `- ${k}: ${v}\n`
+        for (const [k, v] of facts) prompt += `- ${k}: ${v}\n`
+      }
+    }
+  }
 
   if (disabledTools.length > 0) {
     prompt += `
@@ -145,7 +181,21 @@ export async function runChatEngine({
   send: (event: SSEEvent) => void
 }): Promise<void> {
   const { enabled: enabledTools, disabledNames } = await loadToolPermissions(userId)
-  const system = buildSystemPrompt(disabledNames)
+
+  // Assemble memory context (graceful — never blocks chat on failure)
+  let memoryContext: AssembledContext | undefined
+  try {
+    const lastUserMessage = clientMessages.findLast(m => m.role === 'user')
+    const lastText = lastUserMessage?.content
+      .filter((b): b is TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join(' ') ?? ''
+    memoryContext = await assembleContext(userId, lastText)
+  } catch (err) {
+    console.warn('[engine] Memory context assembly failed; continuing without memory', err)
+  }
+
+  const system = buildSystemPrompt(disabledNames, memoryContext)
   const anthropicMessages = toAnthropicMessages(clientMessages)
 
   // Persist the new user message (last item in clientMessages)
