@@ -12,7 +12,8 @@
     "lint": "npm run lint --workspace=apps/web",
     "tray:dev": "npm run dev --workspace=apps/tray",
     "tray:build": "npm run build --workspace=apps/tray",
-    "typecheck": "npm run typecheck --workspace=apps/web && npm run typecheck --workspace=packages/types && npm run typecheck --workspace=apps/tray"
+    "typecheck": "npm run typecheck --workspace=apps/web && npm run typecheck --workspace=packages/types && npm run typecheck --workspace=apps/tray",
+    "test": "npm run test --workspace=packages/types && npm run test --workspace=apps/web"
   },
   "devDependencies": {
     "typescript": "^5.8.2"
