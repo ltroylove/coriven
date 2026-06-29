@@ -6,6 +6,7 @@ import { executeToolHandler } from '@/lib/chat/tools/handlers'
 import type { ChatMessage, TextBlock, ToolUseBlock, ToolResultBlock } from '@/components/chat/types'
 import { assembleContext } from '@/lib/memory/context'
 import type { AssembledContext } from '@/lib/memory/context'
+import { runSentinel } from '@/lib/memory/sentinel'
 
 export type SSEEvent =
   | { type: 'text_delta'; delta: string }
@@ -206,6 +207,7 @@ export async function runChatEngine({
       .map(b => b.text)
       .join('')
     await saveMessage(userId, conversationId, 'user', text)
+    runSentinel(userId, text, 'user').catch(() => {/* already handled internally */})
   }
 
   const loopMessages = [...anthropicMessages]
@@ -252,4 +254,5 @@ export async function runChatEngine({
   }
 
   await saveMessage(userId, conversationId, 'assistant', assistantText, assistantToolCalls)
+  runSentinel(userId, assistantText, 'assistant').catch(() => {/* already handled internally */})
 }
