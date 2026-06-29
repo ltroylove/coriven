@@ -1,6 +1,6 @@
-# Personal Assistant
+# Coriven
 
-An AI-powered personal assistant — task management, reminders, and Claude-powered chat with tool use.
+An AI-powered personal assistant (product name: **Coriven**) — task management, reminders, and Claude-powered chat with tool use.
 
 ## Project Structure
 
@@ -18,9 +18,8 @@ docs/
 
 ## Key Docs
 
-- Architecture decisions: `docs/planning/decisions.md`
-- Full design spec: `docs/planning/2026-06-19-personal-assistant-design.md`
-- Implementation plan: `docs/planning/2026-06-19-implementation-plan.md`
+- **Master blueprint (the only active doc — start here):** `docs/planning/2026-06-24-coriven-master-blueprint.md` — the single source of truth, consolidating all prior planning/research/vision. Where anything conflicts, the most recent wins (see its §0.4).
+- **`docs/archive/`** — all earlier planning/research/vision docs, now obsolete. Historical record only; do not plan or build from them. See `docs/archive/README.md`.
 
 ## Tech Stack
 
