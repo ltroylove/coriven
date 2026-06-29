@@ -7,11 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@personal-assistant/types": "*",
     "@anthropic-ai/sdk": "^0.105.0",
+    "@personal-assistant/types": "*",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.49.1",
     "lucide-react": "^1.21.0",
@@ -21,14 +22,20 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^26.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.3",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.2.0",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.0",
     "supabase": "^2.81.2",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.9"
   }
 }
