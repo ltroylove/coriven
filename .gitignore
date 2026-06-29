@@ -9,9 +9,6 @@
 apps/web/.next/
 apps/web/out/
 
-# Tray daemon build output
-apps/tray/dist/
-
 # Production build
 build/
 dist/
@@ -29,9 +26,6 @@ next-env.d.ts
 # Supabase
 supabase/.branches
 supabase/.temp
-
-# Tray daemon local config (contains auth tokens)
-.personal-assistant/
 
 # Claude Code local config
 .claude/

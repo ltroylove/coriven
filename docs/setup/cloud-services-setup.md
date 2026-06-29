@@ -97,8 +97,6 @@ No public sign-up exists. Dashboard → **Authentication → Users → Add user 
 
 ✅ **Phase 1 complete** (see status box above).
 
-### Phase 1 local config (for tray reminder testing, wave 1.3.1)
-Copy `apps/tray/.env.example` → `apps/tray/.env`: `SUPABASE_URL`, `SUPABASE_ANON_KEY` (= the public values), `USER_EMAIL`/`USER_PASSWORD` (your owner account), `APP_URL` (prod URL). Run `npm run tray:dev`. (gitignored.)
 
 ---
 

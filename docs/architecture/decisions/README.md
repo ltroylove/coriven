@@ -17,12 +17,13 @@ This directory holds Coriven's architecture decision records. ADRs capture signi
 | ADR-009 | Approval queue + append-only audit as the external-action gate | Accepted | `ADR-009-approval-queue-audit-gate.md` |
 | ADR-010 | Scheduled proactive jobs (cron) over real-time computation | Accepted | `ADR-010-scheduled-proactive-jobs.md` |
 | ADR-011 | Entity cap as primary paywall; memory window enforced at retrieval | Accepted | `ADR-011-entity-cap-paywall-memory-window.md` |
+| ADR-012 | Remove the Node.js tray; Tauri is the only tray | Accepted | `ADR-012-tauri-migration-timing.md` |
 
 > ADR-001–006 are the strategic stack decisions, documented in full inline in `docs/architecture/_main/04-Architecture.md`. ADR-007–011 are epic-level decisions surfaced during `/design-epics` and recorded as standalone files here.
 
 ## Next ADR number
 
-**ADR-012**
+**ADR-013**
 
 ## Conventions
 
