@@ -2,23 +2,15 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
-import { createServiceClient } from '@/lib/supabase/server'
-
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const supabase = await createAuthServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  return user?.id ?? null
-}
 
 export async function editEntity(
   entityId: string,
   updates: { name: string; description?: string; aliases?: string[] }
 ): Promise<{ error?: string }> {
-  const userId = await getAuthenticatedUserId()
-  if (!userId) return { error: 'Not authenticated' }
+  const db = await createAuthServerClient()
+  const { data: { user } } = await db.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
   if (!updates.name?.trim()) return { error: 'Name is required' }
-
-  const db = createServiceClient()
 
   const { error } = await db
     .from('entity_profiles')
@@ -28,7 +20,7 @@ export async function editEntity(
       aliases: updates.aliases ?? [],
     })
     .eq('id', entityId)
-    .eq('user_id', userId)
+    .eq('user_id', user.id)
 
   if (error) return { error: error.message }
 
@@ -37,16 +29,15 @@ export async function editEntity(
 }
 
 export async function deleteEntity(entityId: string): Promise<{ error?: string }> {
-  const userId = await getAuthenticatedUserId()
-  if (!userId) return { error: 'Not authenticated' }
-
-  const db = createServiceClient()
+  const db = await createAuthServerClient()
+  const { data: { user } } = await db.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
 
   const { error } = await db
     .from('entity_profiles')
     .delete()
     .eq('id', entityId)
-    .eq('user_id', userId)
+    .eq('user_id', user.id)
 
   if (error) return { error: error.message }
 
@@ -55,16 +46,15 @@ export async function deleteEntity(entityId: string): Promise<{ error?: string }
 }
 
 export async function deleteMemory(memoryId: string): Promise<{ error?: string }> {
-  const userId = await getAuthenticatedUserId()
-  if (!userId) return { error: 'Not authenticated' }
-
-  const db = createServiceClient()
+  const db = await createAuthServerClient()
+  const { data: { user } } = await db.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
 
   // Create tombstone memory
   const { data: tombstone, error: tErr } = await db
     .from('memories')
     .insert({
-      user_id: userId,
+      user_id: user.id,
       content: '__deleted__',
       source: 'tombstone',
     })
@@ -77,7 +67,7 @@ export async function deleteMemory(memoryId: string): Promise<{ error?: string }
     .from('memories')
     .update({ superseded_by: tombstone.id })
     .eq('id', memoryId)
-    .eq('user_id', userId)
+    .eq('user_id', user.id)
 
   if (updateErr) return { error: updateErr.message }
 

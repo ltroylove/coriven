@@ -11,12 +11,11 @@ export interface MemoryContext {
 }
 
 function timeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)
-    ),
-  ])
+  let timer: ReturnType<typeof setTimeout>
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)
+  })
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer))
 }
 
 function packageToMemoryContext(pkg: SentinelPackage, source: 'upstash' | 'supabase'): MemoryContext {

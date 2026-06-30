@@ -24,9 +24,10 @@ export async function handleRecallMemories(
   try {
     const embedding = await generateEmbedding(input.query)
     const { data } = await supabase.rpc('match_memories', {
-      query_embedding: embedding as unknown as string,
+      query_embedding: JSON.stringify(embedding),
       match_user_id: userId,
       match_count: limit,
+      match_threshold: 0.7,
     })
     results = data ?? []
   } catch {

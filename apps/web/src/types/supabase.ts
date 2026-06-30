@@ -362,7 +362,8 @@ export type Database = {
     Functions: {
       match_memories: {
         Args: {
-          match_count?: number
+          match_count: number
+          match_threshold: number
           match_user_id: string
           query_embedding: string
         }

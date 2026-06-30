@@ -20,9 +20,10 @@ export async function classifyAndWriteMemory(
   try {
     const embedding = await generateEmbedding(newFact)
     const { data } = await supabase.rpc('match_memories', {
-      query_embedding: embedding as unknown as string,
+      query_embedding: JSON.stringify(embedding),
       match_user_id: userId,
       match_count: 5,
+      match_threshold: 0.7,
     })
     similar = data ?? []
   } catch {
@@ -34,11 +35,19 @@ export async function classifyAndWriteMemory(
   if (classified.op === 'NOOP') return
 
   if (classified.op === 'DELETE' && classified.supersedes) {
-    await supabase
+    // Insert a tombstone row so the superseded chain is intact
+    const { data: tombstone } = await supabase
       .from('memories')
-      .update({ superseded_by: classified.supersedes })
-      .eq('id', classified.supersedes)
-      .eq('user_id', userId)
+      .insert({ user_id: userId, content: '__deleted__', source: 'tombstone' })
+      .select('id')
+      .single()
+    if (tombstone) {
+      await supabase
+        .from('memories')
+        .update({ superseded_by: tombstone.id })
+        .eq('id', classified.supersedes)
+        .eq('user_id', userId)
+    }
     return
   }
 
@@ -48,7 +57,7 @@ export async function classifyAndWriteMemory(
     // Mark old memory superseded
     const { data: newMem } = await supabase
       .from('memories')
-      .insert({ user_id: userId, content: newFact, embedding: embedding as unknown as string, source: 'chat' })
+      .insert({ user_id: userId, content: newFact, embedding: JSON.stringify(embedding), source: 'chat' })
       .select('id')
       .single()
     if (newMem) {
@@ -64,7 +73,7 @@ export async function classifyAndWriteMemory(
   // ADD
   await supabase
     .from('memories')
-    .insert({ user_id: userId, content: newFact, embedding: embedding as unknown as string, source: 'chat' })
+    .insert({ user_id: userId, content: newFact, embedding: JSON.stringify(embedding), source: 'chat' })
 }
 
 function classify(

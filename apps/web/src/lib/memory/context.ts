@@ -32,9 +32,10 @@ export async function assembleContext(
   try {
     const embedding = await generateEmbedding(latestUserMessage)
     const { data: memData } = await supabase.rpc('match_memories', {
-      query_embedding: embedding as unknown as string,
+      query_embedding: JSON.stringify(embedding),
       match_user_id: userId,
       match_count: TOP_K_MEMORIES,
+      match_threshold: 0.7,
     })
     memories = memData ?? []
   } catch {

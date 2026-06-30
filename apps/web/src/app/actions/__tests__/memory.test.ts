@@ -5,9 +5,6 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/auth-server', () => ({
   createAuthServerClient: vi.fn(),
 }))
-vi.mock('@/lib/supabase/server', () => ({
-  createServiceClient: vi.fn(),
-}))
 
 describe('deleteMemory', () => {
   beforeEach(() => { vi.resetModules() })
@@ -24,9 +21,6 @@ describe('deleteMemory', () => {
 
   it('soft-deletes by superseding with tombstone', async () => {
     const { createAuthServerClient } = await import('@/lib/supabase/auth-server')
-    vi.mocked(createAuthServerClient).mockResolvedValue({
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
-    } as never)
 
     const mockSingle = vi.fn().mockResolvedValue({ data: { id: 'tombstone-id' }, error: null })
     const mockSelect = vi.fn().mockReturnValue({ single: mockSingle })
@@ -35,8 +29,8 @@ describe('deleteMemory', () => {
     const mockEq1 = vi.fn().mockReturnValue({ eq: mockEqChain })
     const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq1 })
 
-    const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue({
+    vi.mocked(createAuthServerClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
       from: vi.fn().mockReturnValue({ insert: mockInsert, update: mockUpdate }),
     } as never)
 
@@ -65,16 +59,13 @@ describe('deleteEntity', () => {
 
   it('hard-deletes the entity row', async () => {
     const { createAuthServerClient } = await import('@/lib/supabase/auth-server')
-    vi.mocked(createAuthServerClient).mockResolvedValue({
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
-    } as never)
 
     const mockEqChain = vi.fn().mockResolvedValue({ error: null })
     const mockEq1 = vi.fn().mockReturnValue({ eq: mockEqChain })
     const mockDelete = vi.fn().mockReturnValue({ eq: mockEq1 })
 
-    const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue({
+    vi.mocked(createAuthServerClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
       from: vi.fn().mockReturnValue({ delete: mockDelete }),
     } as never)
 
@@ -110,16 +101,13 @@ describe('editEntity', () => {
 
   it('updates the entity in-place', async () => {
     const { createAuthServerClient } = await import('@/lib/supabase/auth-server')
-    vi.mocked(createAuthServerClient).mockResolvedValue({
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
-    } as never)
 
     const mockEqChain = vi.fn().mockResolvedValue({ error: null })
     const mockEq1 = vi.fn().mockReturnValue({ eq: mockEqChain })
     const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq1 })
 
-    const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue({
+    vi.mocked(createAuthServerClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
       from: vi.fn().mockReturnValue({ update: mockUpdate }),
     } as never)
 

@@ -65,8 +65,8 @@ Never ask the user to repeat information that's already in an existing task.
       const facts = Object.entries(memoryContext.userContext.facts)
       if (prefs.length > 0 || facts.length > 0) {
         prompt += '\n## User preferences and facts\n'
-        for (const [k, v] of prefs) prompt += `- ${k}: ${v}\n`
-        for (const [k, v] of facts) prompt += `- ${k}: ${v}\n`
+        for (const [k, v] of prefs) prompt += `- ${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}\n`
+        for (const [k, v] of facts) prompt += `- ${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}\n`
       }
     }
   }

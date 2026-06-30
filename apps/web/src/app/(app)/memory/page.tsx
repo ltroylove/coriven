@@ -1,15 +1,12 @@
 import { redirect } from 'next/navigation'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
-import { createServiceClient } from '@/lib/supabase/server'
 import { MemoryPageClient } from './memory-page-client'
 import type { Memory } from '@personal-assistant/types'
 
 export default async function MemoryPage() {
-  const supabase = await createAuthServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const db = await createAuthServerClient()
+  const { data: { user } } = await db.auth.getUser()
   if (!user) redirect('/signin')
-
-  const db = createServiceClient()
 
   const [{ data: entities }, { data: memories }] = await Promise.all([
     db.from('entity_profiles')
