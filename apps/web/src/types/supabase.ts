@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -7,6 +7,11 @@
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -64,6 +69,116 @@ export type Database = {
         }
         Relationships: []
       }
+      conversation_summaries: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          message_range: unknown
+          summary: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          message_range?: unknown
+          summary: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          message_range?: unknown
+          summary?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      entity_profiles: {
+        Row: {
+          aliases: string[]
+          created_at: string
+          description: string | null
+          id: string
+          last_mentioned: string | null
+          mention_count: number
+          name: string
+          recency_weight: number
+          type: Database["public"]["Enums"]["entity_profile_type"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          aliases?: string[]
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_mentioned?: string | null
+          mention_count?: number
+          name: string
+          recency_weight?: number
+          type?: Database["public"]["Enums"]["entity_profile_type"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          aliases?: string[]
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_mentioned?: string | null
+          mention_count?: number
+          name?: string
+          recency_weight?: number
+          type?: Database["public"]["Enums"]["entity_profile_type"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      memories: {
+        Row: {
+          content: string
+          created_at: string
+          embedding: string | null
+          id: string
+          source: string | null
+          superseded_by: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          source?: string | null
+          superseded_by?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          source?: string | null
+          superseded_by?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memories_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "memories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -82,6 +197,30 @@ export type Database = {
           email?: string
           id?: string
           name?: string | null
+        }
+        Relationships: []
+      }
+      sentinel_context: {
+        Row: {
+          built_at: string | null
+          id: string
+          package: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          built_at?: string | null
+          id?: string
+          package?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          built_at?: string | null
+          id?: string
+          package?: Json | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -192,14 +331,51 @@ export type Database = {
         }
         Relationships: []
       }
+      user_context: {
+        Row: {
+          facts: Json
+          id: string
+          preferences: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          facts?: Json
+          id?: string
+          preferences?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          facts?: Json
+          id?: string
+          preferences?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      match_memories: {
+        Args: {
+          match_count: number
+          match_threshold: number
+          match_user_id: string
+          query_embedding: string
+        }
+        Returns: {
+          content: string
+          id: string
+          similarity: number
+        }[]
+      }
     }
     Enums: {
+      entity_profile_type: "person" | "place" | "project" | "thing" | "resource"
       message_role: "user" | "assistant"
       recurrence_type:
         | "none"
@@ -340,6 +516,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      entity_profile_type: ["person", "place", "project", "thing", "resource"],
       message_role: ["user", "assistant"],
       recurrence_type: [
         "none",
@@ -354,4 +531,3 @@ export const Constants = {
     },
   },
 } as const
-

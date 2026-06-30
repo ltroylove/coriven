@@ -1,5 +1,12 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import type { ToolName, TaskPriority, TaskStatus, RecurrenceType } from '@personal-assistant/types'
+import {
+  handleSaveMemory,
+  handleRecallMemories,
+  handleUpsertEntity,
+  handleUpdateUserContext,
+  handleSummarizeConversation,
+} from '@/lib/memory/tools'
 
 type HandlerResult = { content: string; is_error: boolean }
 type Input = Record<string, unknown>
@@ -148,6 +155,11 @@ async function handleDeleteTask(input: Input, userId: string): Promise<HandlerRe
   return { content: `Task ${String(input.id)} deleted`, is_error: false }
 }
 
+async function memResult(fn: Promise<string>): Promise<HandlerResult> {
+  const content = await fn
+  return { content, is_error: false }
+}
+
 const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<HandlerResult>> = {
   create_task: handleCreateTask,
   update_task: handleUpdateTask,
@@ -156,6 +168,11 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   remove_reminder: handleRemoveReminder,
   snooze_reminder: handleSnoozeReminder,
   delete_task: handleDeleteTask,
+  save_memory: (input, userId) => memResult(handleSaveMemory(userId, input as never)),
+  recall_memories: (input, userId) => memResult(handleRecallMemories(userId, input as never)),
+  upsert_entity: (input, userId) => memResult(handleUpsertEntity(userId, input as never)),
+  update_user_context: (input, userId) => memResult(handleUpdateUserContext(userId, input as never)),
+  summarize_conversation: (input, userId) => memResult(handleSummarizeConversation(userId, input as never)),
 }
 
 export async function executeToolHandler(

@@ -11,6 +11,11 @@ const TOOL_LABELS: Record<ToolName, { label: string; description: string }> = {
   remove_reminder: { label: 'Remove reminders', description: 'Delete a specific reminder from a task' },
   snooze_reminder: { label: 'Snooze reminders', description: 'Postpone a reminder by a set time' },
   delete_task: { label: 'Delete tasks', description: 'Permanently remove tasks and all their reminders' },
+  save_memory: { label: 'Save memories', description: 'Store information from conversations for future recall' },
+  recall_memories: { label: 'Recall memories', description: 'Search stored memories to answer questions' },
+  upsert_entity: { label: 'Manage entities', description: 'Create or update profiles for people, places, and projects' },
+  update_user_context: { label: 'Update context', description: 'Update your preferences and known facts' },
+  summarize_conversation: { label: 'Summarize conversations', description: 'Generate summaries of past conversations' },
 }
 
 type Permission = { tool_name: ToolName; enabled: boolean }

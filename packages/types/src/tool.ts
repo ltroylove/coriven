@@ -6,6 +6,11 @@ export type ToolName =
   | 'remove_reminder'
   | 'snooze_reminder'
   | 'delete_task'
+  | 'save_memory'
+  | 'recall_memories'
+  | 'upsert_entity'
+  | 'update_user_context'
+  | 'summarize_conversation'
 
 export interface ToolPermission {
   id: string
