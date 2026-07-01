@@ -39,6 +39,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      behavioral_constraints: {
+        Row: {
+          id: string
+          user_id: string
+          rule: string
+          rationale: string
+          scope: string
+          is_locked: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          rule: string
+          rationale: string
+          scope?: string
+          is_locked?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          rule?: string
+          rationale?: string
+          scope?: string
+          is_locked?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "behavioral_constraints_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       conversation_messages: {
         Row: {
           content: string

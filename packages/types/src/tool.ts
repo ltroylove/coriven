@@ -11,6 +11,19 @@ export type ToolName =
   | 'upsert_entity'
   | 'update_user_context'
   | 'summarize_conversation'
+  | 'add_constraint'
+  | 'list_constraints'
+
+export interface BehavioralConstraint {
+  id: string
+  user_id: string
+  rule: string
+  rationale: string
+  scope: string
+  is_locked: boolean
+  created_at: string
+  updated_at: string
+}
 
 export interface ToolPermission {
   id: string

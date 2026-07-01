@@ -14,6 +14,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'upsert_entity',
   'update_user_context',
   'summarize_conversation',
+  'add_constraint',
+  'list_constraints',
 ]
 
 export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
@@ -211,6 +213,47 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
         summary: { type: 'string', description: 'Prose summary of the conversation' },
       },
       required: ['conversation_id', 'summary'],
+    },
+  },
+
+  add_constraint: {
+    name: 'add_constraint',
+    description:
+      'Save a behavioral constraint — a rule Coriven must always follow. Always include the rationale (why the rule exists); this field is required and cannot be empty.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        rule: { type: 'string', description: 'The behavioral rule, e.g. "never modify MealPrepForge code"' },
+        rationale: {
+          type: 'string',
+          description: "The reason this rule exists — required. E.g. 'MealPrepForge is a separate business'",
+        },
+        scope: {
+          type: 'string',
+          description: 'Optional scope tag (e.g. "MealPrepForge", "email"). Defaults to "all" (applies everywhere).',
+        },
+        is_locked: {
+          type: 'boolean',
+          description:
+            'If true, this constraint cannot be overridden. Locked constraints are hard stops. Defaults to false.',
+        },
+      },
+      required: ['rule', 'rationale'],
+    },
+  },
+
+  list_constraints: {
+    name: 'list_constraints',
+    description: "List the owner's active behavioral constraints. Optionally filter by scope.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        scope: {
+          type: 'string',
+          description: 'Optional scope filter. Returns constraints matching this scope plus all global ("all") constraints.',
+        },
+      },
+      required: [],
     },
   },
 }

@@ -16,6 +16,8 @@ const TOOL_LABELS: Record<ToolName, { label: string; description: string }> = {
   upsert_entity: { label: 'Manage entities', description: 'Create or update profiles for people, places, and projects' },
   update_user_context: { label: 'Update context', description: 'Update your preferences and known facts' },
   summarize_conversation: { label: 'Summarize conversations', description: 'Generate summaries of past conversations' },
+  add_constraint: { label: 'Add constraints', description: 'Save behavioral rules that Coriven must always follow' },
+  list_constraints: { label: 'List constraints', description: 'Show your active behavioral constraints in chat' },
 }
 
 type Permission = { tool_name: ToolName; enabled: boolean }

@@ -19,6 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <a href="/tasks" className="text-gray-400 hover:text-white transition-colors">Tasks</a>
             <a href="/chat" className="text-gray-400 hover:text-white transition-colors">Chat</a>
             <a href="/memory" className="text-gray-400 hover:text-white transition-colors">Memory</a>
+            <a href="/constraints" className="text-gray-400 hover:text-white transition-colors">Constraints</a>
             <a href="/settings" className="text-gray-400 hover:text-white transition-colors">Settings</a>
           </div>
         </div>
