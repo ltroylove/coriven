@@ -160,6 +160,70 @@ async function memResult(fn: Promise<string>): Promise<HandlerResult> {
   return { content, is_error: false }
 }
 
+async function handleAddConstraint(input: Input, userId: string): Promise<HandlerResult> {
+  const rule = String(input.rule ?? '').trim()
+  const rationale = String(input.rationale ?? '').trim()
+
+  if (!rationale) {
+    return {
+      content: 'rationale is required — please state why this rule exists before saving it.',
+      is_error: true,
+    }
+  }
+  if (!rule) {
+    return { content: 'rule is required.', is_error: true }
+  }
+
+  const db = createServiceClient()
+  const { data, error } = await db
+    .from('behavioral_constraints')
+    .insert({
+      user_id: userId,
+      rule,
+      rationale,
+      scope: String(input.scope ?? 'all').trim() || 'all',
+      is_locked: Boolean(input.is_locked ?? false),
+    })
+    .select('id, rule, scope, is_locked')
+    .single()
+
+  if (error) {
+    console.error(JSON.stringify({ event: 'constraint_add_error', userId, error: error.message }))
+    return { content: `Failed to save constraint: ${error.message}`, is_error: true }
+  }
+
+  console.log(JSON.stringify({ event: 'constraint_added', userId, scope: data.scope, isLocked: data.is_locked }))
+  return {
+    content: `Constraint saved: "${data.rule}" (scope: ${data.scope}, locked: ${data.is_locked}).`,
+    is_error: false,
+  }
+}
+
+async function handleListConstraints(input: Input, userId: string): Promise<HandlerResult> {
+  const db = createServiceClient()
+  const scope = input.scope ? String(input.scope).trim() : undefined
+
+  let query = db
+    .from('behavioral_constraints')
+    .select('id, rule, rationale, scope, is_locked, created_at')
+    .eq('user_id', userId)
+    .order('is_locked', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (scope) {
+    query = query.or(`scope.eq.${scope},scope.eq.all`)
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error(JSON.stringify({ event: 'constraint_list_error', userId, error: error.message }))
+    return { content: `Failed to list constraints: ${error.message}`, is_error: true }
+  }
+
+  return { content: JSON.stringify(data ?? []), is_error: false }
+}
+
 const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<HandlerResult>> = {
   create_task: handleCreateTask,
   update_task: handleUpdateTask,
@@ -173,6 +237,8 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   upsert_entity: (input, userId) => memResult(handleUpsertEntity(userId, input as never)),
   update_user_context: (input, userId) => memResult(handleUpdateUserContext(userId, input as never)),
   summarize_conversation: (input, userId) => memResult(handleSummarizeConversation(userId, input as never)),
+  add_constraint: handleAddConstraint,
+  list_constraints: handleListConstraints,
 }
 
 export async function executeToolHandler(
