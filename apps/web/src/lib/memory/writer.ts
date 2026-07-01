@@ -12,6 +12,7 @@ interface ClassifiedWrite {
 export async function classifyAndWriteMemory(
   userId: string,
   newFact: string,
+  source = 'chat',
 ): Promise<void> {
   const supabase = createServiceClient()
 
@@ -51,13 +52,21 @@ export async function classifyAndWriteMemory(
     return
   }
 
-  const embedding = await generateEmbedding(newFact)
+  // Fail-open: persist with NULL embedding if generation fails so the memory is not lost.
+  // The row can be backfilled once the embedding service recovers.
+  let embedding: number[] | null = null
+  try {
+    embedding = await generateEmbedding(newFact)
+  } catch {
+    console.warn('[writer] Embedding generation failed; persisting memory without embedding')
+  }
+  const embeddingValue = embedding ? JSON.stringify(embedding) : null
 
   if (classified.op === 'UPDATE' && classified.supersedes) {
     // Mark old memory superseded
     const { data: newMem } = await supabase
       .from('memories')
-      .insert({ user_id: userId, content: newFact, embedding: JSON.stringify(embedding), source: 'chat' })
+      .insert({ user_id: userId, content: newFact, embedding: embeddingValue, source })
       .select('id')
       .single()
     if (newMem) {
@@ -73,7 +82,7 @@ export async function classifyAndWriteMemory(
   // ADD
   await supabase
     .from('memories')
-    .insert({ user_id: userId, content: newFact, embedding: JSON.stringify(embedding), source: 'chat' })
+    .insert({ user_id: userId, content: newFact, embedding: embeddingValue, source })
 }
 
 function classify(

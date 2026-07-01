@@ -8,7 +8,7 @@ export async function handleSaveMemory(
   input: { content: string; source?: string }
 ): Promise<string> {
   if (!input.content?.trim()) return 'Nothing to save — content was empty.'
-  await classifyAndWriteMemory(userId, input.content.trim())
+  await classifyAndWriteMemory(userId, input.content.trim(), input.source ?? 'chat')
   return `Memory saved: "${input.content.trim()}"`
 }
 

@@ -123,7 +123,9 @@ async function writePackageToUpstash(userId: string, pkg: unknown): Promise<void
   try {
     const redis = await getRedisClient()
     if (!redis) {
-      console.warn('[sentinel] Upstash not configured — skipping cache write')
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('[sentinel] Upstash not configured — skipping cache write')
+      }
       return
     }
     await redis.set(`${SENTINEL_KEY_PREFIX}${userId}`, JSON.stringify(pkg), { ex: SENTINEL_TTL_SECONDS })
@@ -170,7 +172,7 @@ export async function readSentinelPackageFromSupabase(userId: string): Promise<S
       .from('sentinel_context')
       .select('package, built_at')
       .eq('user_id', userId)
-      .single()
+      .maybeSingle()
     if (!data?.package || !data.built_at) return null
     // Reject stale packages
     const age = Date.now() - new Date(data.built_at).getTime()

@@ -17,6 +17,7 @@ export default async function MemoryPage() {
       .select('*')
       .eq('user_id', user.id)
       .is('superseded_by', null)
+      .neq('source', 'tombstone')
       .order('created_at', { ascending: false }),
   ])
 
