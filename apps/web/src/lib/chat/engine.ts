@@ -272,21 +272,24 @@ export async function runChatEngine({
         continue
       }
 
+      // For unlocked matches: log the warning but still execute the handler.
+      // We prepend the warning to the tool result so the model sees it in a single tool_result.
       if (gateResult.matched && !gateResult.isLocked) {
-        const warningMsg = `Note: this action may relate to a standing constraint: "${gateResult.constraint.rule}". Reason: "${gateResult.constraint.rationale}". Proceeding as the constraint is not locked.`
         console.log(JSON.stringify({ event: 'constraint_warning', userId, toolName: block.name, matchedConstraintId: gateResult.constraint.id, isLocked: false }))
-        send({ type: 'tool_result', tool_use_id: block.id, content: warningMsg, is_error: false })
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: warningMsg })
-        continue
       }
 
       const result = await executeToolHandler(block.name, block.input as Record<string, unknown>, userId)
-      send({ type: 'tool_result', tool_use_id: block.id, content: result.content, is_error: result.is_error })
+
+      const resultContent = (gateResult.matched && !gateResult.isLocked)
+        ? `Note: this action may relate to a standing constraint: "${gateResult.constraint!.rule}". Reason: "${gateResult.constraint!.rationale}". Proceeding as the constraint is not locked.\n\n${result.content}`
+        : result.content
+
+      send({ type: 'tool_result', tool_use_id: block.id, content: resultContent, is_error: result.is_error })
 
       toolResults.push({
         type: 'tool_result',
         tool_use_id: block.id,
-        content: result.content,
+        content: resultContent,
         ...(result.is_error ? { is_error: result.is_error } : {}),
       })
     }

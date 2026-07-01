@@ -1,12 +1,15 @@
 -- Drop and recreate match_memories with auth.uid() guard
--- Use extensions.vector to qualify the type — on Supabase, pgvector lives in the
--- extensions schema and the type must be resolvable at function-creation time.
-SET search_path TO extensions, public, auth;
+-- SET LOCAL so the search_path change is scoped to this transaction only and does not
+-- leak into subsequent migrations on the same connection.
+-- extensions.vector qualifies the type at creation time (Supabase pgvector schema).
+-- public.match_memories ensures the function lands in the public schema regardless of
+-- the session search_path order.
+SET LOCAL search_path TO extensions, public, auth;
 
-DROP FUNCTION IF EXISTS match_memories(extensions.vector, float, int, uuid);
-DROP FUNCTION IF EXISTS match_memories(vector, float, int, uuid);
+DROP FUNCTION IF EXISTS public.match_memories(extensions.vector, float, int, uuid);
+DROP FUNCTION IF EXISTS public.match_memories(vector, float, int, uuid);
 
-CREATE OR REPLACE FUNCTION match_memories(
+CREATE OR REPLACE FUNCTION public.match_memories(
   query_embedding extensions.vector(1536),
   match_threshold float,
   match_count int,

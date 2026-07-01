@@ -211,7 +211,7 @@ async function handleListConstraints(input: Input, userId: string): Promise<Hand
     .order('created_at', { ascending: false })
 
   if (scope) {
-    query = query.or(`scope.eq.${scope},scope.eq.all`)
+    query = query.in('scope', [scope, 'all'])
   }
 
   const { data, error } = await query

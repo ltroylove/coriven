@@ -19,6 +19,9 @@ CREATE INDEX IF NOT EXISTS behavioral_constraints_user_locked_idx
 CREATE INDEX IF NOT EXISTS behavioral_constraints_user_scope_idx
   ON behavioral_constraints (user_id, scope);
 
+-- Grant API roles access (consistent with other tables in this repo)
+GRANT SELECT, INSERT, UPDATE, DELETE ON behavioral_constraints TO anon, authenticated, service_role;
+
 -- RLS
 ALTER TABLE behavioral_constraints ENABLE ROW LEVEL SECURITY;
 

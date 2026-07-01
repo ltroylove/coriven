@@ -17,7 +17,7 @@ export async function loadConstraintsForUser(
     .order('created_at', { ascending: true })
 
   if (scope) {
-    query = query.or(`scope.eq.${scope},scope.eq.all`)
+    query = query.in('scope', [scope, 'all'])
   }
 
   const { data, error } = await query

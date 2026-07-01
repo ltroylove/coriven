@@ -16,8 +16,12 @@ export function evaluateConstraint(
   const inputText = JSON.stringify(toolInput).toLowerCase()
   const toolLower = toolName.toLowerCase()
 
-  // Evaluate locked constraints first so the first match is the most authoritative
-  const ordered = [...constraints].sort((a, b) => (b.is_locked ? 1 : 0) - (a.is_locked ? 1 : 0))
+  // Locked constraints first; ties broken by created_at ascending (oldest rule wins)
+  const ordered = [...constraints].sort((a, b) => {
+    const lockDiff = (b.is_locked ? 1 : 0) - (a.is_locked ? 1 : 0)
+    if (lockDiff !== 0) return lockDiff
+    return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0
+  })
 
   for (const constraint of ordered) {
     const ruleLower = constraint.rule.toLowerCase()
