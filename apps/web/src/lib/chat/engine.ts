@@ -7,6 +7,8 @@ import type { ChatMessage, TextBlock, ToolUseBlock, ToolResultBlock } from '@/co
 import { loadMemoryContext } from '@/lib/memory/context-loader'
 import type { MemoryContext } from '@/lib/memory/context-loader'
 import { runSentinel } from '@/lib/memory/sentinel'
+import { loadConstraintsForUser, evaluateConstraint } from '@/lib/chat/constraints'
+import type { BehavioralConstraint } from '@personal-assistant/types'
 
 export type SSEEvent =
   | { type: 'text_delta'; delta: string }
@@ -70,6 +72,15 @@ Never ask the user to repeat information that's already in an existing task.
       }
     }
   }
+
+  prompt += `
+
+## Behavioral constraints
+The owner has configured behavioral constraints — rules you must always follow. Constraints are
+enforced at the engine level before any tool executes. When a tool call is blocked you will receive
+a tool_result with is_error: true explaining which constraint was matched. Do NOT retry a blocked
+action. When calling add_constraint on behalf of the user, always include the user's stated reason
+as the \`rationale\` field — it is required and cannot be empty.`
 
   if (disabledTools.length > 0) {
     prompt += `
@@ -183,6 +194,15 @@ export async function runChatEngine({
 }): Promise<void> {
   const { enabled: enabledTools, disabledNames } = await loadToolPermissions(userId)
 
+  // Load constraints once per turn — gate is a pure function called per tool block (ADR-007)
+  let constraints: BehavioralConstraint[] = []
+  try {
+    constraints = await loadConstraintsForUser(userId)
+  } catch {
+    // Fail-open: constraint load error must never break chat
+    console.error(JSON.stringify({ event: 'constraint_load_error', userId, error: 'load failed at engine start' }))
+  }
+
   // Load memory context via three-tier degradation (graceful — never blocks chat on failure)
   let memoryContext: MemoryContext | undefined
   try {
@@ -238,6 +258,27 @@ export async function runChatEngine({
       if (block.type !== 'tool_use') continue
       assistantToolCalls.push(block)
       send({ type: 'tool_use', id: block.id, name: block.name, input: block.input as Record<string, unknown> })
+
+      // Pre-action constraint gate (ADR-007) — evaluated before any handler executes
+      const gateResult = constraints.length > 0
+        ? evaluateConstraint(block.name, block.input as Record<string, unknown>, constraints)
+        : { matched: false as const }
+
+      if (gateResult.matched && gateResult.isLocked) {
+        const violationMsg = `Action blocked by constraint: "${gateResult.constraint.rule}". Reason: "${gateResult.constraint.rationale}". This constraint is locked and cannot be overridden.`
+        console.log(JSON.stringify({ event: 'constraint_block', userId, toolName: block.name, matchedConstraintId: gateResult.constraint.id, isLocked: true }))
+        send({ type: 'tool_result', tool_use_id: block.id, content: violationMsg, is_error: true })
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: violationMsg, is_error: true })
+        continue
+      }
+
+      if (gateResult.matched && !gateResult.isLocked) {
+        const warningMsg = `Note: this action may relate to a standing constraint: "${gateResult.constraint.rule}". Reason: "${gateResult.constraint.rationale}". Proceeding as the constraint is not locked.`
+        console.log(JSON.stringify({ event: 'constraint_warning', userId, toolName: block.name, matchedConstraintId: gateResult.constraint.id, isLocked: false }))
+        send({ type: 'tool_result', tool_use_id: block.id, content: warningMsg, is_error: false })
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: warningMsg })
+        continue
+      }
 
       const result = await executeToolHandler(block.name, block.input as Record<string, unknown>, userId)
       send({ type: 'tool_result', tool_use_id: block.id, content: result.content, is_error: result.is_error })
