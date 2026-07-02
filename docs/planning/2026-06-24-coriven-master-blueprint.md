@@ -1115,10 +1115,10 @@ Phase numbering follows the **2026-06-20 unified vision** (the later, more compl
 
 ### 17.4 Phase 4 — Communications Intelligence
 
-**Goal:** Email triage saves real time; approval gates prove trust.
-**Build:** `integrations` (encrypted tokens), `email_metadata`, `calendar_events`, `approval_queue`, `audit_log`; Gmail + Google Calendar OAuth (Microsoft Graph/Outlook in parallel); 15-min email poll + Haiku triage; `/email`; draft → approval → send; `/approvals`; meeting prep; follow-up detection; **n8n** as the write-path execution worker (see ADR-013).
-**Integration architecture (ADR-013):** Split read/write paths. Read path (poll, fetch on demand) calls provider APIs directly from Coriven using tokens stored in `integrations` (AES-256-GCM). Write path (approved actions — send email, create event, Slack, Airtable, etc.) routes through n8n; n8n calls back to `GET /api/integrations/token` to obtain a fresh access token immediately before each execution — refresh tokens never leave Coriven. User authenticates once per provider; n8n never holds credentials. Self-hosted n8n strongly preferred; payload logging must be disabled for token-touching workflows.
-**Acceptance:** connect Gmail → emails classified within 15 min → "draft a reply to Sarah declining" → appears in approvals → approve → sent. Meeting-prep toast 15 min before an event.
+**Goal:** Email triage saves real time; approval gates prove trust. Foundation for connecting all of a user's life to Coriven.
+**Build:** `integrations` (`nango_connection_id` + provider per user), `email_metadata`, `calendar_events`, `approval_queue`, `audit_log`; Gmail + Google Calendar + Microsoft Graph/Outlook OAuth via Nango; 15-min email poll + Haiku triage; `/email`; draft → approval → send; `/approvals`; meeting prep; follow-up detection; Zapier Embed for long-tail connectors.
+**Integration architecture (ADR-013):** Three-layer model. **Nango** owns all OAuth flows and token storage for every provider — multi-tenant, no raw tokens in Coriven's DB. **Direct provider API calls** (Gmail, Outlook, Google Calendar) for read path (poll/fetch) and write path (approved actions against deep integrations). **Zapier Embed** for the long-tail — 6,000+ connectors (fitness, banking, smart home, Slack, Notion, etc.) surfaced inside Coriven's settings UI; approved actions fire a typed webhook to Zapier for execution. All execution paths write to `audit_log`.
+**Acceptance:** connect Gmail via Nango → emails classified within 15 min → "draft a reply to Sarah declining" → appears in approvals → approve → sent. Connect a long-tail app via Zapier Embed → approved action executes. Meeting-prep toast 15 min before an event.
 
 ### 17.5 Phase 5 — Proactive Intelligence
 
@@ -1186,7 +1186,7 @@ These are genuine product decisions that the consolidation surfaced. They are **
 
 3. **Sentinel timing — with the memory MVP or after?** The MVP (synchronous context assembly) ships value fastest; the Sentinel is the differentiator but adds Upstash + async complexity. Decide whether Phase 2 ships the MVP first and the Sentinel as 2b, or goes straight to the Sentinel.
 
-4. ~~**n8n vs. direct API calls for Phase 4 launch.**~~ **Resolved (2026-07-02, ADR-013):** Split-path architecture. Direct provider API calls for the read path (poll/fetch); n8n for the write path (approved actions). n8n's 400+ connector ecosystem covers multi-provider write actions without building each integration. Coriven is the sole OAuth token authority — n8n calls back to `/api/integrations/token` per execution; refresh tokens never leave Coriven. Self-hosted n8n.
+4. ~~**n8n vs. direct API calls for Phase 4 launch.**~~ **Resolved (2026-07-02, ADR-013):** Three-layer integration architecture. **Nango** handles all OAuth flows and token storage (multi-tenant, no raw tokens in Coriven's DB). **Direct provider API calls** for deep integrations (Gmail, Outlook, Google Calendar) on both read and write paths. **Zapier Embed** for long-tail connectors (6,000+ apps — fitness, banking, smart home, Slack, Notion, etc.) surfaced inside Coriven's settings UI; approved actions fire a typed webhook to Zapier. n8n ruled out — single-tenant by design, does not scale to a multi-user product.
 
 5. **Pricing validation.** Tiers ($12 / $22, 10-entity free cap) are reasoned but unvalidated. Decide whether to launch with them or test alternatives. The entity cap as the primary paywall is the load-bearing assumption.
 
