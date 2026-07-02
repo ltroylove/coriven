@@ -16,6 +16,12 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'summarize_conversation',
   'add_constraint',
   'list_constraints',
+  'create_goal',
+  'update_goal',
+  'list_goals',
+  'set_goal_momentum',
+  'create_project',
+  'generate_daily_briefing',
 ]
 
 export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
@@ -253,6 +259,122 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
           description: 'Optional scope filter. Returns constraints matching this scope plus all global ("all") constraints.',
         },
       },
+      required: [],
+    },
+  },
+
+  create_goal: {
+    name: 'create_goal',
+    description: 'Create a new goal for the user, optionally linked to a life area.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short, clear goal title' },
+        life_area_id: { type: 'string', description: 'UUID of the life area this goal belongs to. Optional.' },
+        why_it_matters: { type: 'string', description: 'The underlying motivation or reason this goal is important. Optional.' },
+        success_metrics: { type: 'string', description: 'How success will be measured. Optional.' },
+        status: {
+          type: 'string',
+          enum: ['active', 'achieved', 'paused', 'abandoned'],
+          description: 'Goal status. Default: active',
+        },
+        confidence: {
+          type: 'string',
+          enum: ['high', 'medium', 'low'],
+          description: 'Confidence in achieving this goal. Default: medium',
+        },
+      },
+      required: ['title'],
+    },
+  },
+
+  update_goal: {
+    name: 'update_goal',
+    description: 'Update fields on an existing goal. Only include fields you want to change.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Goal ID (UUID)' },
+        title: { type: 'string', description: 'Updated goal title' },
+        why_it_matters: { type: 'string', description: 'Updated motivation text' },
+        success_metrics: { type: 'string', description: 'Updated success metrics' },
+        status: {
+          type: 'string',
+          enum: ['active', 'achieved', 'paused', 'abandoned'],
+          description: 'Updated goal status',
+        },
+        confidence: {
+          type: 'string',
+          enum: ['high', 'medium', 'low'],
+          description: 'Updated confidence level',
+        },
+        life_area_id: { type: 'string', description: 'Updated life area UUID, or null to remove association' },
+      },
+      required: ['id'],
+    },
+  },
+
+  list_goals: {
+    name: 'list_goals',
+    description: "List the user's goals, with a count of associated projects for each. Optionally filter by life area or status.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        life_area_id: { type: 'string', description: 'Filter by life area UUID. Optional.' },
+        status: {
+          type: 'string',
+          enum: ['active', 'achieved', 'paused', 'abandoned'],
+          description: 'Filter by goal status. Omit to return all.',
+        },
+        limit: { type: 'number', description: 'Max results to return. Default: 20' },
+      },
+      required: [],
+    },
+  },
+
+  set_goal_momentum: {
+    name: 'set_goal_momentum',
+    description: "Update the momentum signal on a goal to reflect recent progress direction.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Goal ID (UUID)' },
+        momentum: {
+          type: 'string',
+          enum: ['improving', 'stable', 'declining'],
+          description: 'The new momentum value for this goal',
+        },
+      },
+      required: ['id', 'momentum'],
+    },
+  },
+
+  create_project: {
+    name: 'create_project',
+    description: 'Create a new project linked to a goal. Projects are mid-level work items that contain tasks.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short, clear project title' },
+        goal_id: { type: 'string', description: 'UUID of the goal this project supports' },
+        description: { type: 'string', description: 'Optional longer description of the project' },
+        status: {
+          type: 'string',
+          enum: ['pending', 'in_progress', 'done', 'cancelled'],
+          description: 'Project status. Default: pending',
+        },
+      },
+      required: ['title', 'goal_id'],
+    },
+  },
+
+  generate_daily_briefing: {
+    name: 'generate_daily_briefing',
+    description:
+      'Schedule assembly of the daily briefing package from structured data (goals, tasks, reminders). Does NOT call any LLM. Full implementation is pending Feature 4.4.',
+    input_schema: {
+      type: 'object',
+      properties: {},
       required: [],
     },
   },
