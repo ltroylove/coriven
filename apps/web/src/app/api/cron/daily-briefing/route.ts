@@ -1,14 +1,28 @@
 import { NextResponse } from 'next/server'
+import { timingSafeEqual } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { assembleBriefing } from '@/lib/jobs/briefing'
 import { isInBriefingWindow, getTodayInTimezone } from '@/lib/utils/timezone'
 import type { Json } from '@/types/supabase'
 
+function verifySecret(provided: string | null): boolean {
+  const secret = process.env.CRON_SECRET
+  if (!secret || !provided) return false
+  try {
+    const a = Buffer.from(provided)
+    const b = Buffer.from(secret)
+    if (a.length !== b.length) return false
+    return timingSafeEqual(a, b)
+  } catch {
+    return false
+  }
+}
+
 export async function POST(request: Request) {
   // 1. Auth — CRON_SECRET Bearer check must be first, before any DB access
   const authHeader = request.headers.get('Authorization')
-  const token = authHeader?.replace('Bearer ', '')
-  if (!token || token !== process.env.CRON_SECRET) {
+  const token = authHeader?.replace('Bearer ', '') ?? null
+  if (!verifySecret(token)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -24,14 +38,14 @@ export async function POST(request: Request) {
 
   if (profilesError) {
     console.error(JSON.stringify({ event: 'cron.briefing.profiles_error', error: profilesError.message }))
-    return NextResponse.json({ error: 'Failed to fetch profiles', details: profilesError.message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch profiles' }, { status: 500 })
   }
 
   const now = new Date()
   let usersProcessed = 0
   let briefingsGenerated = 0
   let briefingsSkipped = 0
-  const errors: string[] = []
+  let errorCount = 0
 
   for (const profile of profiles ?? []) {
     usersProcessed++
@@ -63,15 +77,13 @@ export async function POST(request: Request) {
         )
 
       if (upsertError) {
-        const msg = `User ${profile.id}: upsert failed — ${upsertError.message}`
-        errors.push(msg)
+        errorCount++
         console.error(JSON.stringify({ event: 'cron.briefing.upsert_error', userId: profile.id, error: upsertError.message }))
       } else {
         briefingsGenerated++
       }
     } catch (err) {
-      const msg = `User ${profile.id}: assembleBriefing threw — ${String(err)}`
-      errors.push(msg)
+      errorCount++
       console.error(JSON.stringify({ event: 'cron.briefing.assembly_error', userId: profile.id, error: String(err) }))
     }
   }
@@ -79,5 +91,5 @@ export async function POST(request: Request) {
   const durationMs = Date.now() - startedAt
   console.log(JSON.stringify({ event: 'cron.briefing.complete', usersProcessed, briefingsGenerated, durationMs }))
 
-  return NextResponse.json({ usersProcessed, briefingsGenerated, briefingsSkipped, errors })
+  return NextResponse.json({ usersProcessed, briefingsGenerated, briefingsSkipped, errorCount })
 }

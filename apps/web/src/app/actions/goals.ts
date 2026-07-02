@@ -17,7 +17,10 @@ export async function updateGoalStatus(id: string, status: string): Promise<void
     .update({ status: status as 'active' | 'achieved' | 'paused' | 'abandoned' })
     .eq('id', id)
     .eq('user_id', user.id)
-  if (error) throw new Error(error.message)
+  if (error) {
+    console.error('[goals] updateGoalStatus failed', error)
+    throw new Error('Failed to update goal status')
+  }
   revalidatePath(`/goals/${id}`)
   revalidatePath('/goals')
 }
@@ -29,7 +32,10 @@ export async function updateGoalConfidence(id: string, confidence: string): Prom
     .update({ confidence: confidence as 'high' | 'medium' | 'low' })
     .eq('id', id)
     .eq('user_id', user.id)
-  if (error) throw new Error(error.message)
+  if (error) {
+    console.error('[goals] updateGoalConfidence failed', error)
+    throw new Error('Failed to update goal confidence')
+  }
   revalidatePath(`/goals/${id}`)
   revalidatePath('/goals')
 }
@@ -41,7 +47,10 @@ export async function updateProjectStatus(id: string, status: string): Promise<v
     .update({ status: status as 'pending' | 'in_progress' | 'done' | 'cancelled' })
     .eq('id', id)
     .eq('user_id', user.id)
-  if (error) throw new Error(error.message)
+  if (error) {
+    console.error('[goals] updateProjectStatus failed', error)
+    throw new Error('Failed to update project status')
+  }
   revalidatePath(`/projects/${id}`)
   revalidatePath('/goals')
 }

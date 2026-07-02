@@ -56,8 +56,8 @@ export async function updateBriefingSettings(
     return { success: false, error: 'Invalid timezone selection.' }
   }
 
-  // Validate briefingTime format HH:MM
-  if (!/^\d{2}:\d{2}$/.test(briefingTime)) {
+  // Validate briefingTime format HH:MM (00:00–23:59 only)
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(briefingTime)) {
     return { success: false, error: 'Invalid briefing time format. Expected HH:MM.' }
   }
 
@@ -74,7 +74,8 @@ export async function updateBriefingSettings(
     .eq('id', user.id)
 
   if (error) {
-    return { success: false, error: error.message }
+    console.error('[profile] updateBriefingSettings failed', error)
+    return { success: false, error: 'Failed to save settings.' }
   }
 
   revalidatePath('/settings')
