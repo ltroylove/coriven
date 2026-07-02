@@ -371,7 +371,7 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
   generate_daily_briefing: {
     name: 'generate_daily_briefing',
     description:
-      'Schedule assembly of the daily briefing package from structured data (goals, tasks, reminders). Does NOT call any LLM. Full implementation is pending Feature 4.4.',
+      'Assembles and returns today\'s daily briefing from your goals, upcoming tasks, and stalled goals. No AI generation — deterministic summary from your data.',
     input_schema: {
       type: 'object',
       properties: {},

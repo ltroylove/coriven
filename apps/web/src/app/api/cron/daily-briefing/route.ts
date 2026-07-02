@@ -18,7 +18,7 @@ function verifySecret(provided: string | null): boolean {
   }
 }
 
-export async function POST(request: Request) {
+export async function GET(request: Request) {
   // 1. Auth — CRON_SECRET Bearer check must be first, before any DB access
   const authHeader = request.headers.get('Authorization')
   const token = authHeader?.replace('Bearer ', '') ?? null
