@@ -9,6 +9,19 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'remove_reminder',
   'snooze_reminder',
   'delete_task',
+  'save_memory',
+  'recall_memories',
+  'upsert_entity',
+  'update_user_context',
+  'summarize_conversation',
+  'add_constraint',
+  'list_constraints',
+  'create_goal',
+  'update_goal',
+  'list_goals',
+  'set_goal_momentum',
+  'create_project',
+  'generate_daily_briefing',
 ]
 
 export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
@@ -139,6 +152,230 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
         id: { type: 'string', description: 'Task ID (UUID)' },
       },
       required: ['id'],
+    },
+  },
+
+  save_memory: {
+    name: 'save_memory',
+    description: 'Store a piece of information as a long-term memory.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'The information to store' },
+        source: { type: 'string', description: 'Optional source label for this memory' },
+      },
+      required: ['content'],
+    },
+  },
+
+  recall_memories: {
+    name: 'recall_memories',
+    description: 'Search stored memories by semantic similarity.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Natural-language query to search memories' },
+        limit: { type: 'number', description: 'Max results to return. Default: 5' },
+      },
+      required: ['query'],
+    },
+  },
+
+  upsert_entity: {
+    name: 'upsert_entity',
+    description: 'Create or update an entity profile (person, place, project, etc.).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Entity name' },
+        type: { type: 'string', enum: ['person', 'place', 'project', 'thing', 'resource'] },
+        description: { type: 'string', description: 'Details about this entity' },
+        aliases: { type: 'array', items: { type: 'string' }, description: 'Alternative names' },
+      },
+      required: ['name', 'type'],
+    },
+  },
+
+  update_user_context: {
+    name: 'update_user_context',
+    description: 'Update stored user preferences or known facts.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        preferences: { type: 'object', description: 'Key-value preferences to merge' },
+        facts: { type: 'object', description: 'Key-value facts to merge' },
+      },
+      required: [],
+    },
+  },
+
+  summarize_conversation: {
+    name: 'summarize_conversation',
+    description: 'Store a summary of the current conversation for future context.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        conversation_id: { type: 'string', description: 'Conversation UUID' },
+        summary: { type: 'string', description: 'Prose summary of the conversation' },
+      },
+      required: ['conversation_id', 'summary'],
+    },
+  },
+
+  add_constraint: {
+    name: 'add_constraint',
+    description:
+      'Save a behavioral constraint — a rule Coriven must always follow. Always include the rationale (why the rule exists); this field is required and cannot be empty.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        rule: { type: 'string', description: 'The behavioral rule, e.g. "never modify MealPrepForge code"' },
+        rationale: {
+          type: 'string',
+          description: "The reason this rule exists — required. E.g. 'MealPrepForge is a separate business'",
+        },
+        scope: {
+          type: 'string',
+          description: 'Optional scope tag (e.g. "MealPrepForge", "email"). Defaults to "all" (applies everywhere).',
+        },
+        is_locked: {
+          type: 'boolean',
+          description:
+            'If true, this constraint cannot be overridden. Locked constraints are hard stops. Defaults to false.',
+        },
+      },
+      required: ['rule', 'rationale'],
+    },
+  },
+
+  list_constraints: {
+    name: 'list_constraints',
+    description: "List the owner's active behavioral constraints. Optionally filter by scope.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        scope: {
+          type: 'string',
+          description: 'Optional scope filter. Returns constraints matching this scope plus all global ("all") constraints.',
+        },
+      },
+      required: [],
+    },
+  },
+
+  create_goal: {
+    name: 'create_goal',
+    description: 'Create a new goal for the user, optionally linked to a life area.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short, clear goal title' },
+        life_area_id: { type: 'string', description: 'UUID of the life area this goal belongs to. Optional.' },
+        why_it_matters: { type: 'string', description: 'The underlying motivation or reason this goal is important. Optional.' },
+        success_metrics: { type: 'string', description: 'How success will be measured. Optional.' },
+        status: {
+          type: 'string',
+          enum: ['active', 'achieved', 'paused', 'abandoned'],
+          description: 'Goal status. Default: active',
+        },
+        confidence: {
+          type: 'string',
+          enum: ['high', 'medium', 'low'],
+          description: 'Confidence in achieving this goal. Default: medium',
+        },
+      },
+      required: ['title'],
+    },
+  },
+
+  update_goal: {
+    name: 'update_goal',
+    description: 'Update fields on an existing goal. Only include fields you want to change.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Goal ID (UUID)' },
+        title: { type: 'string', description: 'Updated goal title' },
+        why_it_matters: { type: 'string', description: 'Updated motivation text' },
+        success_metrics: { type: 'string', description: 'Updated success metrics' },
+        status: {
+          type: 'string',
+          enum: ['active', 'achieved', 'paused', 'abandoned'],
+          description: 'Updated goal status',
+        },
+        confidence: {
+          type: 'string',
+          enum: ['high', 'medium', 'low'],
+          description: 'Updated confidence level',
+        },
+        life_area_id: { type: 'string', description: 'Updated life area UUID, or null to remove association' },
+      },
+      required: ['id'],
+    },
+  },
+
+  list_goals: {
+    name: 'list_goals',
+    description: "List the user's goals, with a count of associated projects for each. Optionally filter by life area or status.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        life_area_id: { type: 'string', description: 'Filter by life area UUID. Optional.' },
+        status: {
+          type: 'string',
+          enum: ['active', 'achieved', 'paused', 'abandoned'],
+          description: 'Filter by goal status. Omit to return all.',
+        },
+        limit: { type: 'number', description: 'Max results to return. Default: 20' },
+      },
+      required: [],
+    },
+  },
+
+  set_goal_momentum: {
+    name: 'set_goal_momentum',
+    description: "Update the momentum signal on a goal to reflect recent progress direction.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Goal ID (UUID)' },
+        momentum: {
+          type: 'string',
+          enum: ['improving', 'stable', 'declining'],
+          description: 'The new momentum value for this goal',
+        },
+      },
+      required: ['id', 'momentum'],
+    },
+  },
+
+  create_project: {
+    name: 'create_project',
+    description: 'Create a new project linked to a goal. Projects are mid-level work items that contain tasks.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short, clear project title' },
+        goal_id: { type: 'string', description: 'UUID of the goal this project supports' },
+        description: { type: 'string', description: 'Optional longer description of the project' },
+        status: {
+          type: 'string',
+          enum: ['pending', 'in_progress', 'done', 'cancelled'],
+          description: 'Project status. Default: pending',
+        },
+      },
+      required: ['title', 'goal_id'],
+    },
+  },
+
+  generate_daily_briefing: {
+    name: 'generate_daily_briefing',
+    description:
+      'Schedule assembly of the daily briefing package from structured data (goals, tasks, reminders). Does NOT call any LLM. Full implementation is pending Feature 4.4.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: [],
     },
   },
 }
