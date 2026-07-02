@@ -2,7 +2,7 @@
 preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-06-29"
-lastupdated: "2026-06-29T00:00:00"
+lastupdated: "2026-07-02T00:00:00"
 version: "1.0"
 type: adr
 status: Accepted
@@ -14,6 +14,8 @@ product:
 tags: [proactive, cron, jobs]
 relateddocuments:
   - "docs/implementation/_main/epic-6-proactive-intelligence.md"
+  - "docs/implementation/_main/epic-4-goal-driven-organization.md"
+  - "docs/reports/architecture/conformance-epic-4-goal-driven-organization.md"
 ---
 
 # ADR-010: Scheduled Proactive Jobs (Cron) Over Real-Time Computation
@@ -57,9 +59,22 @@ Coriven's proactive features — momentum recalculation, stale-goal nudges, patt
 
 ---
 
+## Implementation Outcome (Epic 4, 2026-07-02)
+
+**Actual vs predicted:** the design held — momentum computation (`apps/web/src/lib/jobs/momentum.ts`) and briefing assembly run only from `/api/cron/*`; nothing recomputes on the request path. Refinements and learnings from the Epic 4 build:
+
+1. **Briefing cadence refined.** "7am, timezone-aware" became a user-configurable `profiles.briefing_time` + `profiles.timezone`, with a `*/30 * * * *` cron and a ±30-minute window check (`isInBriefingWindow`). Double-fire across adjacent runs is absorbed by the `UNIQUE (user_id, briefing_date)` constraint with `ignoreDuplicates` — the exact idempotency mitigation predicted above, and it worked.
+2. **Learning: Vercel Cron invokes via HTTP GET.** Cron route handlers must export `GET`; the Epic 4 routes shipped POST-only and would return 405 to the scheduler (conformance review finding C-1, open at review time).
+3. **Learning: idempotency guards must use dedicated markers, not `updated_at` heuristics.** The nightly route's "skip if any goal was updated today" guard is defeated by ordinary user edits (the `updated_at` trigger fires on every update, any user) and silently cancels the run (finding C-2). Unique constraints / `was_delivered` / explicit `last_fired_at` markers remain the sanctioned pattern; naturally idempotent jobs (momentum recompute) may need no guard at all.
+4. **Open tension: `set_goal_momentum` chat tool.** Implementation added a tool letting the model set momentum directly in chat; the nightly job overwrites it on the next run. Either remove the tool or formalize a user-override that the job respects — to be resolved before Epic 6 builds on the momentum signal.
+
+Conformance review: `docs/reports/architecture/conformance-epic-4-goal-driven-organization.md`.
+
+---
+
 ## References
 - Master blueprint §7.3 (momentum), §12 (proactive intelligence)
 - Epic 6: `docs/implementation/_main/epic-6-proactive-intelligence.md`
 
 ---
-**Last Updated**: 2026-06-29
+**Last Updated**: 2026-07-02
