@@ -3,6 +3,7 @@ import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { signOut } from '@/app/(auth)/signin/actions'
 import { ResizablePanels } from '@/components/layout/resizable-panels'
 import { ChatPane } from '@/components/chat/chat-pane'
+import { AppNav } from '@/components/layout/app-nav'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createAuthServerClient()
@@ -15,13 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <nav className="shrink-0 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <span className="font-semibold text-white">Coriven</span>
-          <div className="flex items-center gap-4 text-sm">
-            <a href="/tasks" className="text-gray-400 hover:text-white transition-colors">Tasks</a>
-            <a href="/chat" className="text-gray-400 hover:text-white transition-colors">Chat</a>
-            <a href="/memory" className="text-gray-400 hover:text-white transition-colors">Memory</a>
-            <a href="/constraints" className="text-gray-400 hover:text-white transition-colors">Constraints</a>
-            <a href="/settings" className="text-gray-400 hover:text-white transition-colors">Settings</a>
-          </div>
+          <AppNav />
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500">{user.email}</span>
