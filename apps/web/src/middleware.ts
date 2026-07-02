@@ -30,11 +30,12 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Allow auth routes and public assets through without a session check
+  // Allow auth routes, the public landing page, and public assets through without a session check
   const isAuthRoute = pathname.startsWith('/signin')
   const isApiAuthRoute = pathname.startsWith('/api/auth')
+  const isPublicPage = pathname === '/'
 
-  if (!user && !isAuthRoute && !isApiAuthRoute) {
+  if (!user && !isAuthRoute && !isApiAuthRoute && !isPublicPage) {
     const url = request.nextUrl.clone()
     url.pathname = '/signin'
     url.searchParams.set('next', pathname)

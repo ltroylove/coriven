@@ -262,6 +262,9 @@
 
 @media (max-width: 800px) {
   .featuresGrid { grid-template-columns: 1fr; }
+  .featureCardWide,
+  .featureCardFull { grid-column: span 1; }
+  .featureCardFull { flex-direction: column; }
 }
 
 .featureCard {
