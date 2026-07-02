@@ -10,6 +10,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { href: '/today', label: 'Today' },
   { href: '/chat', label: 'Chat' },
   { href: '/tasks', label: 'Tasks' },
   { href: '/goals', label: 'Goals', matchPrefixes: ['/goals', '/projects'] },
