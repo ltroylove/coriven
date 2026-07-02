@@ -1,5 +1,12 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import type { ToolName, TaskPriority, TaskStatus, RecurrenceType } from '@personal-assistant/types'
+import {
+  handleSaveMemory,
+  handleRecallMemories,
+  handleUpsertEntity,
+  handleUpdateUserContext,
+  handleSummarizeConversation,
+} from '@/lib/memory/tools'
 
 type HandlerResult = { content: string; is_error: boolean }
 type Input = Record<string, unknown>
@@ -148,6 +155,75 @@ async function handleDeleteTask(input: Input, userId: string): Promise<HandlerRe
   return { content: `Task ${String(input.id)} deleted`, is_error: false }
 }
 
+async function memResult(fn: Promise<string>): Promise<HandlerResult> {
+  const content = await fn
+  return { content, is_error: false }
+}
+
+async function handleAddConstraint(input: Input, userId: string): Promise<HandlerResult> {
+  const rule = String(input.rule ?? '').trim()
+  const rationale = String(input.rationale ?? '').trim()
+
+  if (!rationale) {
+    return {
+      content: 'rationale is required — please state why this rule exists before saving it.',
+      is_error: true,
+    }
+  }
+  if (!rule) {
+    return { content: 'rule is required.', is_error: true }
+  }
+
+  const db = createServiceClient()
+  const { data, error } = await db
+    .from('behavioral_constraints')
+    .insert({
+      user_id: userId,
+      rule,
+      rationale,
+      scope: String(input.scope ?? 'all').trim() || 'all',
+      is_locked: Boolean(input.is_locked ?? false),
+    })
+    .select('id, rule, scope, is_locked')
+    .single()
+
+  if (error) {
+    console.error(JSON.stringify({ event: 'constraint_add_error', userId, error: error.message }))
+    return { content: `Failed to save constraint: ${error.message}`, is_error: true }
+  }
+
+  console.log(JSON.stringify({ event: 'constraint_added', userId, scope: data.scope, isLocked: data.is_locked }))
+  return {
+    content: `Constraint saved: "${data.rule}" (scope: ${data.scope}, locked: ${data.is_locked}).`,
+    is_error: false,
+  }
+}
+
+async function handleListConstraints(input: Input, userId: string): Promise<HandlerResult> {
+  const db = createServiceClient()
+  const scope = input.scope ? String(input.scope).trim() : undefined
+
+  let query = db
+    .from('behavioral_constraints')
+    .select('id, rule, rationale, scope, is_locked, created_at')
+    .eq('user_id', userId)
+    .order('is_locked', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (scope) {
+    query = query.in('scope', [scope, 'all'])
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error(JSON.stringify({ event: 'constraint_list_error', userId, error: error.message }))
+    return { content: `Failed to list constraints: ${error.message}`, is_error: true }
+  }
+
+  return { content: JSON.stringify(data ?? []), is_error: false }
+}
+
 const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<HandlerResult>> = {
   create_task: handleCreateTask,
   update_task: handleUpdateTask,
@@ -156,6 +232,13 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   remove_reminder: handleRemoveReminder,
   snooze_reminder: handleSnoozeReminder,
   delete_task: handleDeleteTask,
+  save_memory: (input, userId) => memResult(handleSaveMemory(userId, input as never)),
+  recall_memories: (input, userId) => memResult(handleRecallMemories(userId, input as never)),
+  upsert_entity: (input, userId) => memResult(handleUpsertEntity(userId, input as never)),
+  update_user_context: (input, userId) => memResult(handleUpdateUserContext(userId, input as never)),
+  summarize_conversation: (input, userId) => memResult(handleSummarizeConversation(userId, input as never)),
+  add_constraint: handleAddConstraint,
+  list_constraints: handleListConstraints,
 }
 
 export async function executeToolHandler(
