@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import type { ToolName, TaskPriority, TaskStatus, RecurrenceType } from '@personal-assistant/types'
 import type { Database } from '@/types/supabase'
+import { assembleBriefing } from '@/lib/jobs/briefing'
 
 type GoalStatus = Database['public']['Enums']['goal_status']
 type GoalConfidence = Database['public']['Enums']['goal_confidence']
@@ -350,14 +351,12 @@ async function handleCreateProject(input: Input, userId: string): Promise<Handle
 }
 
 async function handleGenerateDailyBriefing(_input: Input, userId: string): Promise<HandlerResult> {
-  // Feature 4.4 is pending — briefing assembly from structured data is not yet implemented.
-  console.log(JSON.stringify({ event: 'generate_daily_briefing_stub', userId, note: 'Feature 4.4 pending' }))
-  return {
-    content: JSON.stringify({
-      status: 'scheduled',
-      message: 'Briefing assembly will be implemented in Feature 4.4',
-    }),
-    is_error: false,
+  try {
+    const briefing = await assembleBriefing(userId)
+    console.log(JSON.stringify({ event: 'generate_daily_briefing', userId }))
+    return { content: JSON.stringify(briefing), is_error: false }
+  } catch (err) {
+    return { content: `Failed to generate briefing: ${String(err)}`, is_error: true }
   }
 }
 

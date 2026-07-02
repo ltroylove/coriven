@@ -409,22 +409,28 @@ export type Database = {
       }
       profiles: {
         Row: {
+          briefing_time: string
           created_at: string
           email: string
           id: string
           name: string | null
+          timezone: string
         }
         Insert: {
+          briefing_time?: string
           created_at?: string
           email: string
           id: string
           name?: string | null
+          timezone?: string
         }
         Update: {
+          briefing_time?: string
           created_at?: string
           email?: string
           id?: string
           name?: string | null
+          timezone?: string
         }
         Relationships: []
       }
