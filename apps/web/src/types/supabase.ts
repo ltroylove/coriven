@@ -39,6 +39,193 @@ export type Database = {
   }
   public: {
     Tables: {
+      daily_briefings: {
+        Row: {
+          briefing_date: string
+          content: Json
+          created_at: string
+          delivered_at: string | null
+          id: string
+          user_id: string
+          was_delivered: boolean
+        }
+        Insert: {
+          briefing_date: string
+          content: Json
+          created_at?: string
+          delivered_at?: string | null
+          id?: string
+          user_id: string
+          was_delivered?: boolean
+        }
+        Update: {
+          briefing_date?: string
+          content?: Json
+          created_at?: string
+          delivered_at?: string | null
+          id?: string
+          user_id?: string
+          was_delivered?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_briefings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      goals: {
+        Row: {
+          confidence: Database["public"]["Enums"]["goal_confidence"]
+          created_at: string
+          id: string
+          last_activity_at: string | null
+          last_nudge_at: string | null
+          life_area_id: string | null
+          momentum: Database["public"]["Enums"]["goal_momentum"]
+          status: Database["public"]["Enums"]["goal_status"]
+          success_metrics: string | null
+          title: string
+          updated_at: string
+          user_id: string
+          why_it_matters: string | null
+        }
+        Insert: {
+          confidence?: Database["public"]["Enums"]["goal_confidence"]
+          created_at?: string
+          id?: string
+          last_activity_at?: string | null
+          last_nudge_at?: string | null
+          life_area_id?: string | null
+          momentum?: Database["public"]["Enums"]["goal_momentum"]
+          status?: Database["public"]["Enums"]["goal_status"]
+          success_metrics?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+          why_it_matters?: string | null
+        }
+        Update: {
+          confidence?: Database["public"]["Enums"]["goal_confidence"]
+          created_at?: string
+          id?: string
+          last_activity_at?: string | null
+          last_nudge_at?: string | null
+          life_area_id?: string | null
+          momentum?: Database["public"]["Enums"]["goal_momentum"]
+          status?: Database["public"]["Enums"]["goal_status"]
+          success_metrics?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+          why_it_matters?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goals_life_area_id_fkey"
+            columns: ["life_area_id"]
+            isOneToOne: false
+            referencedRelation: "life_areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goals_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      life_areas: {
+        Row: {
+          color: string | null
+          created_at: string
+          icon: string | null
+          id: string
+          name: string
+          sort_order: number
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "life_areas_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      projects: {
+        Row: {
+          created_at: string
+          description: string | null
+          goal_id: string | null
+          id: string
+          status: Database["public"]["Enums"]["task_status"]
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          goal_id?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["task_status"]
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          goal_id?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["task_status"]
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       behavioral_constraints: {
         Row: {
           id: string
@@ -222,22 +409,28 @@ export type Database = {
       }
       profiles: {
         Row: {
+          briefing_time: string
           created_at: string
           email: string
           id: string
           name: string | null
+          timezone: string
         }
         Insert: {
+          briefing_time?: string
           created_at?: string
           email: string
           id: string
           name?: string | null
+          timezone?: string
         }
         Update: {
+          briefing_time?: string
           created_at?: string
           email?: string
           id?: string
           name?: string | null
+          timezone?: string
         }
         Relationships: []
       }
@@ -315,8 +508,10 @@ export type Database = {
           created_at: string
           description: string | null
           due_at: string | null
+          goal_id: string | null
           id: string
           priority: Database["public"]["Enums"]["task_priority"]
+          project_id: string | null
           status: Database["public"]["Enums"]["task_status"]
           title: string
           updated_at: string
@@ -327,8 +522,10 @@ export type Database = {
           created_at?: string
           description?: string | null
           due_at?: string | null
+          goal_id?: string | null
           id?: string
           priority?: Database["public"]["Enums"]["task_priority"]
+          project_id?: string | null
           status?: Database["public"]["Enums"]["task_status"]
           title: string
           updated_at?: string
@@ -339,14 +536,31 @@ export type Database = {
           created_at?: string
           description?: string | null
           due_at?: string | null
+          goal_id?: string | null
           id?: string
           priority?: Database["public"]["Enums"]["task_priority"]
+          project_id?: string | null
           status?: Database["public"]["Enums"]["task_status"]
           title?: string
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tasks_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       tool_permissions: {
         Row: {
@@ -417,6 +631,9 @@ export type Database = {
     }
     Enums: {
       entity_profile_type: "person" | "place" | "project" | "thing" | "resource"
+      goal_confidence: "high" | "medium" | "low"
+      goal_momentum: "improving" | "stable" | "declining"
+      goal_status: "active" | "achieved" | "paused" | "abandoned"
       message_role: "user" | "assistant"
       recurrence_type:
         | "none"
@@ -558,6 +775,9 @@ export const Constants = {
   public: {
     Enums: {
       entity_profile_type: ["person", "place", "project", "thing", "resource"],
+      goal_confidence: ["high", "medium", "low"],
+      goal_momentum: ["improving", "stable", "declining"],
+      goal_status: ["active", "achieved", "paused", "abandoned"],
       message_role: ["user", "assistant"],
       recurrence_type: [
         "none",

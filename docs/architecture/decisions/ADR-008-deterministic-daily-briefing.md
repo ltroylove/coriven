@@ -2,7 +2,7 @@
 preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-06-29"
-lastupdated: "2026-06-29T00:00:00"
+lastupdated: "2026-07-02T00:00:00"
 version: "1.0"
 type: adr
 status: Accepted
@@ -57,9 +57,19 @@ The daily briefing summarizes goals in motion, upcoming items, stalled goals, an
 
 ---
 
+## Implementation Outcome (Epic 4, 2026-07-02)
+
+**Actual vs predicted:** as predicted. `assembleBriefing()` (`apps/web/src/lib/jobs/briefing.ts`) makes zero model calls — Supabase queries only — and the cost/latency/reliability consequences held.
+
+Decisions made during implementation, not anticipated here:
+1. **Structured JSON, not a prose template.** The briefing is stored as a `BriefingContent` JSON object (goals in motion, upcoming 7 days, stalled, approvals pending) in `daily_briefings.content` and rendered as sections by the `/today` page — the "template" is UI-side, not text assembly. Same determinism, better reuse (tray polls `/api/briefing/today` for the same payload).
+2. **On-demand assembly exposed as a chat tool.** `generate_daily_briefing` reuses the same deterministic function inside chat; the LLM only narrates the returned data. This preserves the no-LLM-generation invariant while giving the "tell me about my day" affordance.
+
+---
+
 ## References
 - Master blueprint §10 (Daily Briefing), §10.1
 - Epic 4: `docs/implementation/_main/epic-4-goal-driven-organization.md`
 
 ---
-**Last Updated**: 2026-06-29
+**Last Updated**: 2026-07-02
