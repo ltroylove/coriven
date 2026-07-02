@@ -29,11 +29,16 @@ export async function GET(request: Request) {
     const momentumResult = await recomputeMomentum()
     const nudgeResult = await detectAndNudgeStaleGoals()
 
+    // Log full errors server-side; never expose raw DB error strings in the response body
+    if (momentumResult.errors.length > 0) {
+      console.error(JSON.stringify({ event: 'cron.nightly.errors', errors: momentumResult.errors }))
+    }
+
     const response = {
       goalsProcessed: momentumResult.goalsProcessed,
       goalsUpdated: momentumResult.goalsUpdated,
       nudgesFired: nudgeResult.nudgesFired,
-      errors: momentumResult.errors,
+      errorCount: momentumResult.errors.length,
     }
 
     console.log(JSON.stringify({ event: 'cron.nightly.complete', ...response }))

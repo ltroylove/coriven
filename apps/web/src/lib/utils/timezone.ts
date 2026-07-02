@@ -22,7 +22,8 @@ export function isInBriefingWindow(
   const [bHour, bMinute] = briefingTime.split(':').map(Number)
   const briefingTotalMinutes = bHour * 60 + bMinute
 
-  const diff = Math.abs(localTotalMinutes - briefingTotalMinutes)
+  const absDiff = Math.abs(localTotalMinutes - briefingTotalMinutes)
+  const diff = Math.min(absDiff, 1440 - absDiff)
   return diff <= windowMinutes
 }
 

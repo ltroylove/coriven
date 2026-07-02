@@ -33,11 +33,27 @@ describe('computeMomentum', () => {
 
 // ---------------------------------------------------------------------------
 // isStale
-// Returns true if lastActivityAt is null OR older than thresholdDays days ago
+// A goal is stale if:
+//   - lastActivityAt is set AND older than thresholdDays ago, OR
+//   - lastActivityAt is null AND createdAt is older than thresholdDays ago
+// Brand-new goals (null activity, recent creation) are NOT stale.
 // ---------------------------------------------------------------------------
 describe('isStale', () => {
-  it('returns true when lastActivityAt is null', () => {
-    expect(isStale(null, 14)).toBe(true)
+  // Null lastActivityAt without createdAt → safe default: not stale
+  it('returns false when lastActivityAt is null and no createdAt provided (safe default)', () => {
+    expect(isStale(null, 14)).toBe(false)
+  })
+
+  // Null lastActivityAt + old createdAt → stale
+  it('returns true when lastActivityAt is null and createdAt is 15 days ago', () => {
+    const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000)
+    expect(isStale(null, 14, fifteenDaysAgo)).toBe(true)
+  })
+
+  // Null lastActivityAt + recent createdAt → NOT stale (brand-new goal)
+  it('returns false when lastActivityAt is null and createdAt is 2 days ago (brand-new goal)', () => {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    expect(isStale(null, 14, twoDaysAgo)).toBe(false)
   })
 
   it('returns true when lastActivityAt is 15 days ago (beyond 14-day threshold)', () => {

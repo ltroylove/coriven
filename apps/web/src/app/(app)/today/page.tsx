@@ -9,14 +9,29 @@ export default async function TodayPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/?next=/today')
 
-  const today = new Date().toISOString().slice(0, 10)
+  // 9b — resolve today's date in the user's local timezone
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('timezone')
+    .eq('id', user.id)
+    .single()
 
-  const { data: briefing } = await supabase
+  const timezone = profile?.timezone ?? 'America/Chicago'
+  // en-CA locale formats as YYYY-MM-DD natively
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date())
+
+  // 9a — handle fetch error explicitly; PGRST116 = no row found (not a real error)
+  const { data: briefing, error: briefingError } = await supabase
     .from('daily_briefings')
     .select('*')
     .eq('user_id', user.id)
     .eq('briefing_date', today)
-    .single()
+    .maybeSingle()
+
+  if (briefingError && briefingError.code !== 'PGRST116') {
+    console.error('[today] briefing fetch failed', briefingError)
+    return <div>Couldn&apos;t load your briefing. Try refreshing.</div>
+  }
 
   // No briefing for today — empty state
   if (!briefing) {
@@ -27,8 +42,9 @@ export default async function TodayPage() {
           <p className="text-sm text-gray-500 mt-0.5">Your daily briefing</p>
         </div>
         <div className="rounded-lg border border-dashed border-gray-800 p-8 text-center max-w-md">
+          {/* 9c — removed hardcoded "tomorrow at 7am" assumption */}
           <p className="text-sm text-gray-400">
-            Your first briefing arrives tomorrow at 7am. Until then, you can ask Coriven anything in{' '}
+            Your daily briefing hasn&apos;t arrived yet. Check back after your configured briefing time, or ask Coriven anything in{' '}
             <Link href="/chat" className="text-blue-500 hover:text-blue-400 transition-colors">
               Chat
             </Link>

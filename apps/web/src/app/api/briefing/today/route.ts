@@ -18,8 +18,17 @@ export async function GET(request: NextRequest): Promise<NextResponse<BriefingRe
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // 2. Get today's date as YYYY-MM-DD (UTC)
-  const today = new Date().toISOString().slice(0, 10)
+  // 2. Resolve today's date in the user's local timezone
+  //    briefing_date is stored in the user's local date, not UTC
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('timezone')
+    .eq('id', user.id)
+    .single()
+
+  const timezone = profile?.timezone ?? 'America/Chicago'
+  // en-CA locale formats as YYYY-MM-DD natively
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date())
 
   // 3. Query daily_briefings for today
   const { data: row, error: fetchError } = await supabase

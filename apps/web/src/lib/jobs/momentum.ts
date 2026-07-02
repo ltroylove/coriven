@@ -22,12 +22,23 @@ export function computeMomentum(
 }
 
 /**
- * Returns true if lastActivityAt is null or older than thresholdDays days ago.
+ * Returns true if the goal is stale based on activity and creation date.
+ * A goal is stale if:
+ *   - lastActivityAt is set and older than thresholdDays ago, OR
+ *   - lastActivityAt is null AND createdAt is older than thresholdDays ago
+ * Brand-new goals (null activity but recent creation) are NOT considered stale.
  */
-export function isStale(lastActivityAt: Date | null, thresholdDays: number): boolean {
-  if (lastActivityAt === null) return true
+export function isStale(
+  lastActivityAt: Date | null,
+  thresholdDays: number,
+  createdAt?: Date,
+): boolean {
   const cutoff = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000)
-  return lastActivityAt < cutoff
+  if (lastActivityAt !== null) return lastActivityAt < cutoff
+  // lastActivityAt is null — fall back to createdAt if provided
+  if (createdAt !== undefined) return createdAt < cutoff
+  // No fallback available — treat as not stale (safe default)
+  return false
 }
 
 /**
@@ -152,12 +163,18 @@ export async function detectAndNudgeStaleGoals(): Promise<{
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
 
-  // Fetch active goals where last_activity_at is null or older than 14 days
+  // Fetch active goals that are stale:
+  // - last_activity_at is set and older than 14 days, OR
+  // - last_activity_at is null AND created_at is also older than 14 days
+  // This prevents brand-new goals from being immediately flagged as stale.
   const { data: staleGoals, error } = await supabase
     .from('goals')
-    .select('id, last_nudge_at')
+    .select('id, last_nudge_at, created_at')
     .eq('status', 'active')
-    .or(`last_activity_at.is.null,last_activity_at.lt.${fourteenDaysAgo}`)
+    .or(
+      `last_activity_at.lt.${fourteenDaysAgo},` +
+      `and(last_activity_at.is.null,created_at.lt.${fourteenDaysAgo})`,
+    )
 
   if (error) {
     console.log(JSON.stringify({ event: 'nudge.complete', staleDetected: 0, nudgesFired: 0, error: error.message }))

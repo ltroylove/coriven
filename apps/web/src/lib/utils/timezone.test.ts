@@ -100,4 +100,25 @@ describe('isInBriefingWindow', () => {
     const now = new Date('2026-06-15T12:31:00.000Z')
     expect(isInBriefingWindow('America/Chicago', '07:00', now, 30)).toBe(false)
   })
+
+  // -------------------------------------------------------------------------
+  // Case 10: midnight wrap — 23:55 local, briefing at 00:10, window 30 min → in
+  // America/Chicago CST = UTC-6 in winter (2025-01-15)
+  // 23:55 CST = 05:55 UTC next day → use 2025-01-15T05:55:00Z
+  // diff = |1435 - 10| = 1425, circular = min(1425, 15) = 15 → in window
+  // -------------------------------------------------------------------------
+  it('wraps correctly across midnight — 23:55 local, briefing at 00:10, window 30 min — in window', () => {
+    const now = new Date('2025-01-15T05:55:00Z')
+    expect(isInBriefingWindow('America/Chicago', '00:10', now, 30)).toBe(true)
+  })
+
+  // -------------------------------------------------------------------------
+  // Case 11: outside midnight window — 23:00 local, briefing at 00:10, window 30 min → out
+  // 23:00 CST = 05:00 UTC → use 2025-01-15T05:00:00Z
+  // diff = |1380 - 10| = 1370, circular = min(1370, 70) = 70 → out of window
+  // -------------------------------------------------------------------------
+  it('outside midnight window — 23:00 local, briefing at 00:10, window 30 min — out of window', () => {
+    const now = new Date('2025-01-15T05:00:00Z')
+    expect(isInBriefingWindow('America/Chicago', '00:10', now, 30)).toBe(false)
+  })
 })

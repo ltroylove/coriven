@@ -308,7 +308,10 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
           enum: ['high', 'medium', 'low'],
           description: 'Updated confidence level',
         },
-        life_area_id: { type: 'string', description: 'Updated life area UUID, or null to remove association' },
+        life_area_id: {
+          type: ['string', 'null'],
+          description: 'Life area UUID to assign this goal to, or null to remove the association',
+        },
       },
       required: ['id'],
     },

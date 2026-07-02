@@ -5,6 +5,10 @@ import { ToolPermissionsClient } from './tool-permissions-client'
 import { BriefingSettingsClient } from './briefing-settings-client'
 import type { ToolName } from '@personal-assistant/types'
 
+// Defaults used as fallback when data is unavailable
+const DEFAULT_TIMEZONE = 'America/Chicago'
+const DEFAULT_BRIEFING_TIME = '07:00'
+
 async function getToolPermissions(userId: string) {
   const db = createServiceClient()
   const { data } = await db
@@ -21,17 +25,26 @@ async function getToolPermissions(userId: string) {
   })) as { tool_name: ToolName; enabled: boolean }[]
 }
 
-async function getBriefingSettings(userId: string) {
-  const db = createServiceClient()
-  const { data } = await db
+async function getBriefingSettings() {
+  // Use auth client (respects RLS) instead of service client for user-facing reads
+  const supabase = await createAuthServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { timezone: DEFAULT_TIMEZONE, briefingTime: DEFAULT_BRIEFING_TIME }
+
+  const { data, error } = await supabase
     .from('profiles')
     .select('timezone, briefing_time')
-    .eq('id', userId)
+    .eq('id', user.id)
     .single()
 
+  if (error) {
+    console.error('[settings] getBriefingSettings failed', error)
+    return { timezone: DEFAULT_TIMEZONE, briefingTime: DEFAULT_BRIEFING_TIME }
+  }
+
   return {
-    timezone: data?.timezone ?? 'America/Chicago',
-    briefingTime: data?.briefing_time ?? '07:00',
+    timezone: data?.timezone ?? DEFAULT_TIMEZONE,
+    briefingTime: data?.briefing_time ?? DEFAULT_BRIEFING_TIME,
   }
 }
 
@@ -39,7 +52,7 @@ export default async function SettingsPage() {
   const supabase = await createAuthServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   const permissions = user ? await getToolPermissions(user.id) : []
-  const briefingSettings = user ? await getBriefingSettings(user.id) : { timezone: 'America/Chicago', briefingTime: '07:00' }
+  const briefingSettings = await getBriefingSettings()
 
   return (
     <div className="max-w-lg">

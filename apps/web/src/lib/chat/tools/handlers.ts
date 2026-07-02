@@ -247,10 +247,14 @@ async function handleCreateGoal(input: Input, userId: string): Promise<HandlerRe
       .select()
       .single()
 
-    if (error) return { content: `Failed to create goal: ${error.message}`, is_error: true }
+    if (error) {
+      console.error('[handleCreateGoal] create_goal failed', { userId, error })
+      return { content: 'Failed to create goal. Please try again.', is_error: true }
+    }
     return { content: JSON.stringify(data), is_error: false }
   } catch (err) {
-    return { content: `Failed to create goal: ${String(err)}`, is_error: true }
+    console.error('[handleCreateGoal] create_goal unexpected error', { userId, err })
+    return { content: 'Failed to create goal. Please try again.', is_error: true }
   }
 }
 
@@ -283,10 +287,14 @@ async function handleUpdateGoal(input: Input, userId: string): Promise<HandlerRe
       .select()
       .single()
 
-    if (error) return { content: `Failed to update goal: ${error.message}`, is_error: true }
+    if (error) {
+      console.error('[handleUpdateGoal] update_goal failed', { userId, error })
+      return { content: 'Failed to update goal. Please try again.', is_error: true }
+    }
     return { content: JSON.stringify(data), is_error: false }
   } catch (err) {
-    return { content: `Failed to update goal: ${String(err)}`, is_error: true }
+    console.error('[handleUpdateGoal] update_goal unexpected error', { userId, err })
+    return { content: 'Failed to update goal. Please try again.', is_error: true }
   }
 }
 
@@ -303,10 +311,14 @@ async function handleListGoals(input: Input, userId: string): Promise<HandlerRes
     query = query.order('created_at', { ascending: false }).limit(Number(input.limit ?? 20))
 
     const { data, error } = await query
-    if (error) return { content: `Failed to list goals: ${error.message}`, is_error: true }
+    if (error) {
+      console.error('[handleListGoals] list_goals failed', { userId, error })
+      return { content: 'Failed to list goals. Please try again.', is_error: true }
+    }
     return { content: JSON.stringify(data), is_error: false }
   } catch (err) {
-    return { content: `Failed to list goals: ${String(err)}`, is_error: true }
+    console.error('[handleListGoals] list_goals unexpected error', { userId, err })
+    return { content: 'Failed to list goals. Please try again.', is_error: true }
   }
 }
 
@@ -321,10 +333,14 @@ async function handleSetGoalMomentum(input: Input, userId: string): Promise<Hand
       .select('id, title, momentum')
       .single()
 
-    if (error) return { content: `Failed to set goal momentum: ${error.message}`, is_error: true }
+    if (error) {
+      console.error('[handleSetGoalMomentum] set_goal_momentum failed', { userId, error })
+      return { content: 'Failed to set goal momentum. Please try again.', is_error: true }
+    }
     return { content: JSON.stringify(data), is_error: false }
   } catch (err) {
-    return { content: `Failed to set goal momentum: ${String(err)}`, is_error: true }
+    console.error('[handleSetGoalMomentum] set_goal_momentum unexpected error', { userId, err })
+    return { content: 'Failed to set goal momentum. Please try again.', is_error: true }
   }
 }
 
@@ -343,10 +359,14 @@ async function handleCreateProject(input: Input, userId: string): Promise<Handle
       .select()
       .single()
 
-    if (error) return { content: `Failed to create project: ${error.message}`, is_error: true }
+    if (error) {
+      console.error('[handleCreateProject] create_project failed', { userId, error })
+      return { content: 'Failed to create project. Please try again.', is_error: true }
+    }
     return { content: JSON.stringify(data), is_error: false }
   } catch (err) {
-    return { content: `Failed to create project: ${String(err)}`, is_error: true }
+    console.error('[handleCreateProject] create_project unexpected error', { userId, err })
+    return { content: 'Failed to create project. Please try again.', is_error: true }
   }
 }
 
@@ -356,7 +376,8 @@ async function handleGenerateDailyBriefing(_input: Input, userId: string): Promi
     console.log(JSON.stringify({ event: 'generate_daily_briefing', userId }))
     return { content: JSON.stringify(briefing), is_error: false }
   } catch (err) {
-    return { content: `Failed to generate briefing: ${String(err)}`, is_error: true }
+    console.error('[handleGenerateDailyBriefing] generate_daily_briefing unexpected error', { userId, err })
+    return { content: 'Failed to generate briefing. Please try again.', is_error: true }
   }
 }
 

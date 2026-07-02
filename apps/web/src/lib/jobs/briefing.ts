@@ -23,10 +23,12 @@ export async function assembleBriefing(userId: string): Promise<BriefingContent>
 
   // -------------------------------------------------------------------------
   // 1. Goals in motion — active goals with positive or neutral momentum
+  //    Task count is fetched per goal (not via projects(count)) so that
+  //    linkedTaskCount reflects actual open tasks, not project count.
   // -------------------------------------------------------------------------
   const { data: motionGoals, error: motionError } = await supabase
     .from('goals')
-    .select('id, title, momentum, projects(count)')
+    .select('id, title, momentum')
     .eq('user_id', userId)
     .eq('status', 'active')
     .in('momentum', ['improving', 'stable'])
@@ -36,19 +38,20 @@ export async function assembleBriefing(userId: string): Promise<BriefingContent>
     console.error(JSON.stringify({ event: 'briefing.goalsInMotion.error', userId, error: motionError.message }))
   }
 
-  const goalsInMotion = (motionGoals ?? []).map(g => {
-    // projects(count) returns an array of aggregate objects like [{ count: 3 }]
-    const projectsAgg = g.projects as unknown as Array<{ count: number }>
-    const linkedTaskCount = Array.isArray(projectsAgg) && projectsAgg.length > 0
-      ? Number(projectsAgg[0].count ?? 0)
-      : 0
+  const goalsInMotion = await Promise.all((motionGoals ?? []).map(async (g) => {
+    const { count } = await supabase
+      .from('tasks')
+      .select('*', { count: 'exact', head: true })
+      .eq('goal_id', g.id)
+      .neq('status', 'done')
+      .neq('status', 'cancelled')
     return {
       goalId: g.id,
       title: g.title,
-      momentum: g.momentum,
-      linkedTaskCount,
+      momentum: g.momentum ?? 'stable',
+      linkedTaskCount: count ?? 0,
     }
-  })
+  }))
 
   // -------------------------------------------------------------------------
   // 2. Upcoming tasks — due in the next 7 days, not completed
