@@ -11,6 +11,19 @@ const TOOL_LABELS: Record<ToolName, { label: string; description: string }> = {
   remove_reminder: { label: 'Remove reminders', description: 'Delete a specific reminder from a task' },
   snooze_reminder: { label: 'Snooze reminders', description: 'Postpone a reminder by a set time' },
   delete_task: { label: 'Delete tasks', description: 'Permanently remove tasks and all their reminders' },
+  save_memory: { label: 'Save memories', description: 'Store information from conversations for future recall' },
+  recall_memories: { label: 'Recall memories', description: 'Search stored memories to answer questions' },
+  upsert_entity: { label: 'Manage entities', description: 'Create or update profiles for people, places, and projects' },
+  update_user_context: { label: 'Update context', description: 'Update your preferences and known facts' },
+  summarize_conversation: { label: 'Summarize conversations', description: 'Generate summaries of past conversations' },
+  add_constraint: { label: 'Add constraints', description: 'Save behavioral rules that Coriven must always follow' },
+  list_constraints: { label: 'List constraints', description: 'Show your active behavioral constraints in chat' },
+  create_goal: { label: 'Create goals', description: 'Add new goals to your goal hierarchy' },
+  update_goal: { label: 'Update goals', description: 'Edit goal details, status, and confidence' },
+  list_goals: { label: 'Read goals', description: 'Look up your goals and their associated project counts' },
+  set_goal_momentum: { label: 'Set goal momentum', description: 'Update the momentum signal on a goal' },
+  create_project: { label: 'Create projects', description: 'Add new projects linked to your goals' },
+  generate_daily_briefing: { label: 'Generate daily briefing', description: 'Assemble a daily briefing package from your goals and tasks' },
 }
 
 type Permission = { tool_name: ToolName; enabled: boolean }

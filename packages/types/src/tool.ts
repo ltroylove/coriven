@@ -6,6 +6,30 @@ export type ToolName =
   | 'remove_reminder'
   | 'snooze_reminder'
   | 'delete_task'
+  | 'save_memory'
+  | 'recall_memories'
+  | 'upsert_entity'
+  | 'update_user_context'
+  | 'summarize_conversation'
+  | 'add_constraint'
+  | 'list_constraints'
+  | 'create_goal'
+  | 'update_goal'
+  | 'list_goals'
+  | 'set_goal_momentum'
+  | 'create_project'
+  | 'generate_daily_briefing'
+
+export interface BehavioralConstraint {
+  id: string
+  user_id: string
+  rule: string
+  rationale: string
+  scope: string
+  is_locked: boolean
+  created_at: string
+  updated_at: string
+}
 
 export interface ToolPermission {
   id: string

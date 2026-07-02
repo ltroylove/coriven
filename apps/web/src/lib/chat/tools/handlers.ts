@@ -1,5 +1,17 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import type { ToolName, TaskPriority, TaskStatus, RecurrenceType } from '@personal-assistant/types'
+import type { Database } from '@/types/supabase'
+
+type GoalStatus = Database['public']['Enums']['goal_status']
+type GoalConfidence = Database['public']['Enums']['goal_confidence']
+type GoalMomentum = Database['public']['Enums']['goal_momentum']
+import {
+  handleSaveMemory,
+  handleRecallMemories,
+  handleUpsertEntity,
+  handleUpdateUserContext,
+  handleSummarizeConversation,
+} from '@/lib/memory/tools'
 
 type HandlerResult = { content: string; is_error: boolean }
 type Input = Record<string, unknown>
@@ -148,6 +160,207 @@ async function handleDeleteTask(input: Input, userId: string): Promise<HandlerRe
   return { content: `Task ${String(input.id)} deleted`, is_error: false }
 }
 
+async function memResult(fn: Promise<string>): Promise<HandlerResult> {
+  const content = await fn
+  return { content, is_error: false }
+}
+
+async function handleAddConstraint(input: Input, userId: string): Promise<HandlerResult> {
+  const rule = String(input.rule ?? '').trim()
+  const rationale = String(input.rationale ?? '').trim()
+
+  if (!rationale) {
+    return {
+      content: 'rationale is required — please state why this rule exists before saving it.',
+      is_error: true,
+    }
+  }
+  if (!rule) {
+    return { content: 'rule is required.', is_error: true }
+  }
+
+  const db = createServiceClient()
+  const { data, error } = await db
+    .from('behavioral_constraints')
+    .insert({
+      user_id: userId,
+      rule,
+      rationale,
+      scope: String(input.scope ?? 'all').trim() || 'all',
+      is_locked: Boolean(input.is_locked ?? false),
+    })
+    .select('id, rule, scope, is_locked')
+    .single()
+
+  if (error) {
+    console.error(JSON.stringify({ event: 'constraint_add_error', userId, error: error.message }))
+    return { content: `Failed to save constraint: ${error.message}`, is_error: true }
+  }
+
+  console.log(JSON.stringify({ event: 'constraint_added', userId, scope: data.scope, isLocked: data.is_locked }))
+  return {
+    content: `Constraint saved: "${data.rule}" (scope: ${data.scope}, locked: ${data.is_locked}).`,
+    is_error: false,
+  }
+}
+
+async function handleListConstraints(input: Input, userId: string): Promise<HandlerResult> {
+  const db = createServiceClient()
+  const scope = input.scope ? String(input.scope).trim() : undefined
+
+  let query = db
+    .from('behavioral_constraints')
+    .select('id, rule, rationale, scope, is_locked, created_at')
+    .eq('user_id', userId)
+    .order('is_locked', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (scope) {
+    query = query.in('scope', [scope, 'all'])
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error(JSON.stringify({ event: 'constraint_list_error', userId, error: error.message }))
+    return { content: `Failed to list constraints: ${error.message}`, is_error: true }
+  }
+
+  return { content: JSON.stringify(data ?? []), is_error: false }
+}
+
+async function handleCreateGoal(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    const { data, error } = await db
+      .from('goals')
+      .insert({
+        user_id: userId,
+        title: String(input.title ?? '').trim(),
+        life_area_id: input.life_area_id ? String(input.life_area_id) : null,
+        why_it_matters: input.why_it_matters ? String(input.why_it_matters) : null,
+        success_metrics: input.success_metrics ? String(input.success_metrics) : null,
+        status: (input.status ?? 'active') as GoalStatus,
+        confidence: (input.confidence ?? 'medium') as GoalConfidence,
+      })
+      .select()
+      .single()
+
+    if (error) return { content: `Failed to create goal: ${error.message}`, is_error: true }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    return { content: `Failed to create goal: ${String(err)}`, is_error: true }
+  }
+}
+
+async function handleUpdateGoal(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+
+    type GoalUpdate = {
+      title?: string
+      why_it_matters?: string | null
+      success_metrics?: string | null
+      status?: GoalStatus
+      confidence?: GoalConfidence
+      life_area_id?: string | null
+    }
+
+    const updates: GoalUpdate = {}
+    if ('title' in input) updates.title = String(input.title)
+    if ('why_it_matters' in input) updates.why_it_matters = input.why_it_matters ? String(input.why_it_matters) : null
+    if ('success_metrics' in input) updates.success_metrics = input.success_metrics ? String(input.success_metrics) : null
+    if ('status' in input) updates.status = input.status as GoalStatus
+    if ('confidence' in input) updates.confidence = input.confidence as GoalConfidence
+    if ('life_area_id' in input) updates.life_area_id = input.life_area_id ? String(input.life_area_id) : null
+
+    const { data, error } = await db
+      .from('goals')
+      .update(updates)
+      .eq('id', String(input.id))
+      .eq('user_id', userId)
+      .select()
+      .single()
+
+    if (error) return { content: `Failed to update goal: ${error.message}`, is_error: true }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    return { content: `Failed to update goal: ${String(err)}`, is_error: true }
+  }
+}
+
+async function handleListGoals(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    let query = db
+      .from('goals')
+      .select('*, projects(count)')
+      .eq('user_id', userId)
+
+    if (input.life_area_id) query = query.eq('life_area_id', String(input.life_area_id))
+    if (input.status) query = query.eq('status', input.status as GoalStatus)
+    query = query.order('created_at', { ascending: false }).limit(Number(input.limit ?? 20))
+
+    const { data, error } = await query
+    if (error) return { content: `Failed to list goals: ${error.message}`, is_error: true }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    return { content: `Failed to list goals: ${String(err)}`, is_error: true }
+  }
+}
+
+async function handleSetGoalMomentum(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    const { data, error } = await db
+      .from('goals')
+      .update({ momentum: input.momentum as GoalMomentum })
+      .eq('id', String(input.id))
+      .eq('user_id', userId)
+      .select('id, title, momentum')
+      .single()
+
+    if (error) return { content: `Failed to set goal momentum: ${error.message}`, is_error: true }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    return { content: `Failed to set goal momentum: ${String(err)}`, is_error: true }
+  }
+}
+
+async function handleCreateProject(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    const { data, error } = await db
+      .from('projects')
+      .insert({
+        user_id: userId,
+        title: String(input.title ?? '').trim(),
+        goal_id: String(input.goal_id),
+        description: input.description ? String(input.description) : null,
+        status: (input.status ?? 'pending') as TaskStatus,
+      })
+      .select()
+      .single()
+
+    if (error) return { content: `Failed to create project: ${error.message}`, is_error: true }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    return { content: `Failed to create project: ${String(err)}`, is_error: true }
+  }
+}
+
+async function handleGenerateDailyBriefing(_input: Input, userId: string): Promise<HandlerResult> {
+  // Feature 4.4 is pending — briefing assembly from structured data is not yet implemented.
+  console.log(JSON.stringify({ event: 'generate_daily_briefing_stub', userId, note: 'Feature 4.4 pending' }))
+  return {
+    content: JSON.stringify({
+      status: 'scheduled',
+      message: 'Briefing assembly will be implemented in Feature 4.4',
+    }),
+    is_error: false,
+  }
+}
+
 const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<HandlerResult>> = {
   create_task: handleCreateTask,
   update_task: handleUpdateTask,
@@ -156,6 +369,19 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   remove_reminder: handleRemoveReminder,
   snooze_reminder: handleSnoozeReminder,
   delete_task: handleDeleteTask,
+  save_memory: (input, userId) => memResult(handleSaveMemory(userId, input as never)),
+  recall_memories: (input, userId) => memResult(handleRecallMemories(userId, input as never)),
+  upsert_entity: (input, userId) => memResult(handleUpsertEntity(userId, input as never)),
+  update_user_context: (input, userId) => memResult(handleUpdateUserContext(userId, input as never)),
+  summarize_conversation: (input, userId) => memResult(handleSummarizeConversation(userId, input as never)),
+  add_constraint: handleAddConstraint,
+  list_constraints: handleListConstraints,
+  create_goal: handleCreateGoal,
+  update_goal: handleUpdateGoal,
+  list_goals: handleListGoals,
+  set_goal_momentum: handleSetGoalMomentum,
+  create_project: handleCreateProject,
+  generate_daily_briefing: handleGenerateDailyBriefing,
 }
 
 export async function executeToolHandler(
