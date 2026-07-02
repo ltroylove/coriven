@@ -1168,6 +1168,11 @@ Multi-user orgs with `org_id` on shared records and org-level RLS. Phase 6+. Sup
 ### 18.9 Custom Recurrence Intervals
 "Every 3 days," "every 2 weeks." The current set is daily/weekdays/weekly/monthly/yearly. Deferred.
 
+### 18.10 Advisor Model Pattern in Chat Engine
+The Anthropic API exposes an `advisor_20260301` server-side tool (beta) that pairs a fast/cheap **executor** model with a higher-capability **advisor** model consulted mid-generation. For Coriven this could mean Haiku or Sonnet as the executor for routine chat, calling Opus 4.8 (or Fable 5 when valid in the pairing table) as an advisor on complex reasoning tasks — better quality at lower average cost than running Opus for everything.
+
+**How to evaluate:** wire the advisor tool into `apps/web/src/lib/chat/engine.ts` behind a feature flag; compare response quality and latency on a set of Sentinel-heavy or goal-hierarchy queries. Key constraints: advisor model must be at least as capable as the executor; pass the full `response.content` including `advisor_tool_result` blocks back in subsequent turns; beta header `anthropic-beta: advisor-tool-2026-03-01` required. Deferred until the chat engine is stable post-Phase 3.
+
 ---
 
 ## 19. Open Decisions for the Build Plan
