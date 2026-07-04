@@ -854,6 +854,56 @@ export type Database = {
           }
         ]
       }
+      followup_candidates: {
+        Row: {
+          id: string
+          user_id: string
+          provider: string
+          thread_id: string
+          last_sent_message_id: string | null
+          subject: string | null
+          to_address: string | null
+          last_sent_at: string
+          detected_at: string
+          dismissed: boolean
+          cleared_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: string
+          thread_id: string
+          last_sent_message_id?: string | null
+          subject?: string | null
+          to_address?: string | null
+          last_sent_at: string
+          detected_at?: string
+          dismissed?: boolean
+          cleared_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: string
+          thread_id?: string
+          last_sent_message_id?: string | null
+          subject?: string | null
+          to_address?: string | null
+          last_sent_at?: string
+          detected_at?: string
+          dismissed?: boolean
+          cleared_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_candidates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       tool_permissions: {
         Row: {
           enabled: boolean

@@ -60,3 +60,57 @@ export async function markEmailRead(
     return { success: false, error: message }
   }
 }
+
+/**
+ * Dismisses a follow-up candidate for the currently signed-in user.
+ *
+ * Sets dismissed = true on the followup_candidates row identified by `id`.
+ * Belt-and-suspenders: also filters by user_id in addition to RLS.
+ * After dismissal, revalidates /email so the section updates.
+ *
+ * Returns `{ success: true }` or `{ success: false, error: string }` — never throws.
+ */
+export async function dismissFollowUp(
+  id: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createAuthServerClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return { success: false, error: 'Unauthenticated' }
+    }
+
+    const { error } = await supabase
+      .from('followup_candidates')
+      .update({ dismissed: true })
+      .eq('id', id)
+      .eq('user_id', user.id) // Belt-and-suspenders in addition to RLS
+
+    if (error) {
+      console.error(
+        JSON.stringify({
+          event: 'email.actions.dismissFollowUp.error',
+          candidateId: id,
+          error: error.message,
+        }),
+      )
+      return { success: false, error: error.message }
+    }
+
+    revalidatePath('/email')
+    return { success: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(
+      JSON.stringify({
+        event: 'email.actions.dismissFollowUp.unexpected',
+        candidateId: id,
+        error: message,
+      }),
+    )
+    return { success: false, error: message }
+  }
+}

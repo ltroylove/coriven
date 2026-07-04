@@ -3,6 +3,8 @@ import Link from 'next/link'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { groupByCategory, CATEGORY_LABELS } from '@/lib/email/inbox'
 import { EmailRow } from '@/components/email/email-row'
+import { FollowUpRow } from '@/components/email/followup-row'
+import type { FollowUpCandidate } from '@/components/email/followup-row'
 
 export default async function EmailPage() {
   const supabase = await createAuthServerClient()
@@ -19,6 +21,17 @@ export default async function EmailPage() {
     .in('provider', ['gmail', 'outlook'])
 
   const hasEmailProviders = (integrations ?? []).length > 0
+
+  // Fetch follow-up candidates: undismissed, uncleared, oldest-waiting first
+  const { data: candidates } = await supabase
+    .from('followup_candidates')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('dismissed', false)
+    .is('cleared_at', null)
+    .order('last_sent_at', { ascending: true })
+
+  const followUpCandidates: FollowUpCandidate[] = candidates ?? []
 
   // Fetch up to 100 most recent triaged emails for this user
   const { data: emails, error } = await supabase
@@ -53,6 +66,29 @@ export default async function EmailPage() {
         <h1 className="text-xl font-semibold text-white">Email</h1>
         <p className="text-sm text-gray-500 mt-0.5">Triaged inbox across your connected accounts</p>
       </div>
+
+      {/* Waiting on replies section — shown only when there are active candidates */}
+      {followUpCandidates.length > 0 && (
+        <section
+          aria-label="Waiting on replies"
+          className="mb-8 max-w-3xl"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium text-amber-500">
+              Waiting on replies
+            </h2>
+            <span className="text-xs text-gray-600">{followUpCandidates.length}</span>
+          </div>
+          <p className="text-xs text-gray-600 mb-3">
+            Threads where you sent the last message more than 3 days ago with no reply.
+          </p>
+          <div className="space-y-2">
+            {followUpCandidates.map((candidate) => (
+              <FollowUpRow key={candidate.id} candidate={candidate} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* No connected providers */}
       {!hasEmailProviders && (
