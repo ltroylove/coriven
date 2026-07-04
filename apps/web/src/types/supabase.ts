@@ -226,6 +226,44 @@ export type Database = {
           }
         ]
       }
+      integrations: {
+        Row: {
+          id: string
+          user_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          nango_connection_id: string
+          scopes: string[]
+          connected_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          nango_connection_id: string
+          scopes?: string[]
+          connected_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: Database["public"]["Enums"]["integration_provider"]
+          nango_connection_id?: string
+          scopes?: string[]
+          connected_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       behavioral_constraints: {
         Row: {
           id: string
@@ -630,6 +668,7 @@ export type Database = {
       }
     }
     Enums: {
+      integration_provider: "gmail" | "outlook" | "google_calendar" | "outlook_calendar"
       entity_profile_type: "person" | "place" | "project" | "thing" | "resource"
       goal_confidence: "high" | "medium" | "low"
       goal_momentum: "improving" | "stable" | "declining"
