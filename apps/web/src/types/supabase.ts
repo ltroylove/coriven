@@ -264,6 +264,59 @@ export type Database = {
           }
         ]
       }
+      calendar_events: {
+        Row: {
+          id: string
+          user_id: string
+          provider: string
+          event_id: string
+          title: string | null
+          start_at: string
+          end_at: string | null
+          attendees: Json
+          location: string | null
+          description: string | null
+          is_all_day: boolean
+          synced_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: string
+          event_id: string
+          title?: string | null
+          start_at: string
+          end_at?: string | null
+          attendees?: Json
+          location?: string | null
+          description?: string | null
+          is_all_day?: boolean
+          synced_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: string
+          event_id?: string
+          title?: string | null
+          start_at?: string
+          end_at?: string | null
+          attendees?: Json
+          location?: string | null
+          description?: string | null
+          is_all_day?: boolean
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       behavioral_constraints: {
         Row: {
           id: string
