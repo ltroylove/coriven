@@ -95,6 +95,75 @@ describe('markEmailRead', () => {
 })
 
 // ---------------------------------------------------------------------------
+// dismissFollowUp
+// ---------------------------------------------------------------------------
+
+describe('dismissFollowUp', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns { success: false } when unauthenticated', async () => {
+    mockCreateAuth.mockResolvedValue(makeSupabase(null) as never)
+
+    const { dismissFollowUp } = await import('@/app/actions/email')
+    const result = await dismissFollowUp('candidate-1')
+
+    expect(result).toEqual({ success: false, error: 'Unauthenticated' })
+    expect(mockRevalidate).not.toHaveBeenCalled()
+  })
+
+  it('returns { success: true } and calls revalidatePath on success', async () => {
+    mockCreateAuth.mockResolvedValue(makeSupabase('user-1') as never)
+
+    const { dismissFollowUp } = await import('@/app/actions/email')
+    const result = await dismissFollowUp('candidate-abc')
+
+    expect(result).toEqual({ success: true })
+    expect(mockRevalidate).toHaveBeenCalledWith('/email')
+  })
+
+  it('returns { success: false } when DB update fails', async () => {
+    mockCreateAuth.mockResolvedValue(
+      makeSupabase('user-1', { message: 'DB dismiss error' }) as never,
+    )
+
+    const { dismissFollowUp } = await import('@/app/actions/email')
+    const result = await dismissFollowUp('candidate-xyz')
+
+    expect(result).toEqual({ success: false, error: 'DB dismiss error' })
+    expect(mockRevalidate).not.toHaveBeenCalled()
+  })
+
+  it('calls from("followup_candidates") with correct table name', async () => {
+    const supabase = makeSupabase('user-1')
+    mockCreateAuth.mockResolvedValue(supabase as never)
+
+    const { dismissFollowUp } = await import('@/app/actions/email')
+    await dismissFollowUp('candidate-test')
+
+    expect(supabase.from).toHaveBeenCalledWith('followup_candidates')
+  })
+
+  it('only updates the row for the authenticated user (ownership enforcement)', async () => {
+    const supabase = makeSupabase('user-1')
+    mockCreateAuth.mockResolvedValue(supabase as never)
+
+    // Capture the chain to verify .eq('user_id', 'user-1') is called
+    const { update, eqId, eqUser } = makeUpdateChain(null)
+    supabase.from = vi.fn().mockReturnValue({ update })
+
+    const { dismissFollowUp } = await import('@/app/actions/email')
+    await dismissFollowUp('candidate-owner-test')
+
+    // update was called with { dismissed: true }
+    expect(update).toHaveBeenCalledWith({ dismissed: true })
+    // The second .eq() filters by user_id
+    expect(eqUser).toHaveBeenCalledWith('user_id', 'user-1')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Security assertion: email detail page must not use dangerouslySetInnerHTML
 // ---------------------------------------------------------------------------
 
