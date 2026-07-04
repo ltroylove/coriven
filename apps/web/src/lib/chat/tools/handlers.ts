@@ -3,6 +3,7 @@ import type { ToolName, TaskPriority, TaskStatus, RecurrenceType } from '@person
 import type { Database } from '@/types/supabase'
 import { assembleBriefing } from '@/lib/jobs/briefing'
 import { fetchEmailBody } from '@/lib/email/providers'
+import { neutralizeUntrustedOutput } from '@/lib/security/egress'
 
 type GoalStatus = Database['public']['Enums']['goal_status']
 type GoalConfidence = Database['public']['Enums']['goal_confidence']
@@ -423,6 +424,12 @@ async function handleGetEmailThread(input: Input, userId: string): Promise<Handl
       UNTRUSTED_FRAME_FOOTER,
     ].join('\n')
 
+    // Egress allowlist (ADR-013 §Security / Wave 5.3.3):
+    // Neutralize URLs and markdown images in the tool-result content before it
+    // re-enters the model context.  If the model echoes a hostile URL from the
+    // email body back to the user, the echoed form will already be neutralized.
+    const safeFramed = neutralizeUntrustedOutput(framed)
+
     console.log(
       JSON.stringify({
         event: 'tool.get_email_thread',
@@ -432,7 +439,7 @@ async function handleGetEmailThread(input: Input, userId: string): Promise<Handl
       }),
     )
 
-    return { content: framed, is_error: false }
+    return { content: safeFramed, is_error: false }
   } catch (err) {
     console.error(
       JSON.stringify({

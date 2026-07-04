@@ -51,6 +51,8 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { writeAudit } from '@/lib/approvals/audit'
 import { sendEmail } from './email'
 import { createCalendarEvent, updateCalendarEvent } from './calendar'
+import { loadConstraintsForUser } from '@/lib/chat/constraints/loader'
+import { evaluateConstraint } from '@/lib/chat/constraints/evaluator'
 import type {
   ApprovalQueueRow,
   ExecutionResult,
@@ -118,6 +120,68 @@ async function writeTerminalStatus(
 }
 
 // ---------------------------------------------------------------------------
+// Constraint gate (Wave 5.3.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Evaluate the user's behavioral constraints against the proposed action.
+ *
+ * Semantics (fail-CLOSED — contrast with chat engine's fail-open):
+ *   External actions are irreversible; conservatism is correct.
+ *
+ * Returns:
+ *   { blocked: false, warning: null }       — no match; proceed
+ *   { blocked: false, warning: string }     — unlocked match; warn but proceed
+ *   { blocked: true,  reason: string }      — locked match; block execution
+ *   { blocked: true,  reason: 'constraint_check_failed' } — evaluator error; block
+ */
+async function runConstraintGate(
+  approval: ApprovalQueueRow,
+): Promise<{ blocked: boolean; reason?: string; warning?: string | null }> {
+  try {
+    const constraints = await loadConstraintsForUser(approval.user_id)
+    if (constraints.length === 0) return { blocked: false, warning: null }
+
+    // Build a tool-call-shaped input so the evaluator can match on action_type
+    // and payload fields (recipient addresses, titles, etc.).
+    const toolInput: Record<string, unknown> = {
+      action_type: approval.action_type,
+      provider: approval.provider,
+      ...(approval.payload as unknown as Record<string, unknown>),
+    }
+
+    const result = evaluateConstraint(approval.action_type, toolInput, constraints)
+
+    if (!result.matched) return { blocked: false, warning: null }
+
+    const { constraint, isLocked } = result
+
+    if (isLocked) {
+      return {
+        blocked: true,
+        reason: `Locked constraint blocked execution: "${constraint.rule}" — ${constraint.rationale}`,
+      }
+    }
+
+    // Unlocked match: surface a warning, but allow execution.
+    return {
+      blocked: false,
+      warning: `Constraint advisory: "${constraint.rule}" — ${constraint.rationale}`,
+    }
+  } catch (err) {
+    // Evaluator or loader threw — fail closed.
+    console.error(
+      JSON.stringify({
+        event: 'executor.router.constraint_gate_error',
+        id: approval.id,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    )
+    return { blocked: true, reason: 'constraint_check_failed' }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -129,6 +193,9 @@ async function writeTerminalStatus(
  *     approveAction passes ['approved']; retryAction passes ['failed'].
  *   - If the row's status is not in allowedStatuses, returns invalid_state
  *     without touching the provider.
+ *   - Behavioral constraint gate (Wave 5.3.3): evaluated before any executor
+ *     runs; fail-closed on error or locked match (contrast with chat gate's
+ *     fail-open — external actions are irreversible).
  *
  * On success: writes status → 'executed', stamps executed_at, appends audit entry.
  * On failure: writes status → 'failed' + error_code, appends audit entry.
@@ -153,6 +220,52 @@ export async function executeApprovedAction(
   }
 
   const { id, user_id, action_type, provider, payload } = approval
+
+  // --- Behavioral constraint gate (Wave 5.3.3, fail-CLOSED) ---
+  const gate = await runConstraintGate(approval)
+  if (gate.blocked) {
+    const errorCode =
+      gate.reason === 'constraint_check_failed'
+        ? 'constraint_check_failed'
+        : 'constraint_blocked'
+
+    console.error(
+      JSON.stringify({
+        event: 'executor.router.constraint_blocked',
+        id,
+        errorCode,
+        reason: gate.reason,
+      }),
+    )
+
+    await writeTerminalStatus(id, { ok: false, errorCode })
+
+    void writeAudit({
+      userId: user_id,
+      approvalId: id,
+      actionType: action_type,
+      provider,
+      status: 'failed',
+      errorCode,
+      delegation: {
+        user: user_id,
+        actor: 'coriven',
+        connection: { provider, nango_connection_id: null },
+      },
+    })
+
+    return { ok: false, errorCode: errorCode as ExecutionResult['errorCode'] }
+  }
+
+  if (gate.warning) {
+    console.log(
+      JSON.stringify({
+        event: 'executor.router.constraint_advisory',
+        id,
+        warning: gate.warning,
+      }),
+    )
+  }
 
   // --- Route to executor ---
   let execResult: { ok: boolean; errorCode?: string; providerRef?: string }

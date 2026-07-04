@@ -28,6 +28,14 @@ vi.mock('@/lib/supabase/server', () => ({
 vi.mock('@/lib/approvals/audit', () => ({
   writeAudit: vi.fn().mockResolvedValue({ success: true }),
 }))
+// Wave 5.3.3: constraint gate mocks — default to no constraints (gate passes).
+// Individual tests that need the gate to block should override these per-test.
+vi.mock('@/lib/chat/constraints/loader', () => ({
+  loadConstraintsForUser: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('@/lib/chat/constraints/evaluator', () => ({
+  evaluateConstraint: vi.fn().mockReturnValue({ matched: false }),
+}))
 
 // ---------------------------------------------------------------------------
 // Helpers
