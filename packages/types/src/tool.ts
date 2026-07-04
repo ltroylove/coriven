@@ -20,6 +20,7 @@ export type ToolName =
   | 'create_project'
   | 'generate_daily_briefing'
   | 'submit_for_approval'
+  | 'get_email_thread'
 
 export interface BehavioralConstraint {
   id: string

@@ -23,6 +23,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'create_project',
   'generate_daily_briefing',
   'submit_for_approval',
+  'get_email_thread',
 ]
 
 export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
@@ -380,6 +381,29 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
       type: 'object',
       properties: {},
       required: [],
+    },
+  },
+
+  get_email_thread: {
+    name: 'get_email_thread',
+    description:
+      'Fetch the full body of a specific email message on demand from the user\'s connected email account. ' +
+      'The content is retrieved live and is never stored. ' +
+      'Use this when the user asks to read or discuss the content of a specific email.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        provider: {
+          type: 'string',
+          enum: ['gmail', 'outlook'],
+          description: 'The email provider that owns this message.',
+        },
+        message_id: {
+          type: 'string',
+          description: 'The provider-native message ID (from email_metadata).',
+        },
+      },
+      required: ['provider', 'message_id'],
     },
   },
 
