@@ -14,6 +14,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/chat', label: 'Chat' },
   { href: '/tasks', label: 'Tasks' },
   { href: '/goals', label: 'Goals', matchPrefixes: ['/goals', '/projects'] },
+  { href: '/approvals', label: 'Approvals' },
   { href: '/memory', label: 'Memory' },
   { href: '/constraints', label: 'Constraints' },
   { href: '/settings', label: 'Settings' },

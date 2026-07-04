@@ -24,6 +24,7 @@ const TOOL_LABELS: Record<ToolName, { label: string; description: string }> = {
   set_goal_momentum: { label: 'Set goal momentum', description: 'Update the momentum signal on a goal' },
   create_project: { label: 'Create projects', description: 'Add new projects linked to your goals' },
   generate_daily_briefing: { label: 'Generate daily briefing', description: 'Assemble a daily briefing package from your goals and tasks' },
+  submit_for_approval: { label: 'Submit for approval', description: 'Propose external actions (email, calendar) for your review before anything executes' },
 }
 
 type Permission = { tool_name: ToolName; enabled: boolean }

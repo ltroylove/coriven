@@ -13,6 +13,8 @@ import {
   handleUpdateUserContext,
   handleSummarizeConversation,
 } from '@/lib/memory/tools'
+import { validatePayload } from '@/lib/approvals/payload-validator'
+import { writeAudit } from '@/lib/approvals/audit'
 
 type HandlerResult = { content: string; is_error: boolean }
 type Input = Record<string, unknown>
@@ -381,6 +383,75 @@ async function handleGenerateDailyBriefing(_input: Input, userId: string): Promi
   }
 }
 
+async function handleSubmitForApproval(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const actionType = String(input.action_type ?? '').trim()
+    const provider = String(input.provider ?? '').trim()
+    const payload = input.payload
+    const aiSummary = input.ai_summary ? String(input.ai_summary).trim() : null
+
+    // Validate action type and payload shape before any DB write
+    const validation = validatePayload(actionType, payload)
+    if (!validation.valid) {
+      console.error('[handleSubmitForApproval] payload validation failed', { userId, actionType, errors: validation.errors })
+      return {
+        content: `Proposal rejected — validation failed: ${validation.errors.join('; ')}`,
+        is_error: true,
+      }
+    }
+
+    const db = createServiceClient()
+    const { data, error } = await db
+      .from('approval_queue')
+      .insert({
+        user_id: userId,
+        action_type: actionType,
+        provider,
+        payload: payload as import('@/types/supabase').Json,
+        ai_summary: aiSummary,
+        status: 'pending',
+      })
+      .select('id, action_type, provider, status, created_at')
+      .single()
+
+    if (error) {
+      console.error('[handleSubmitForApproval] insert failed', { userId, actionType, error: error.message })
+      return { content: 'Failed to queue the proposed action. Please try again.', is_error: true }
+    }
+
+    // Write 'proposed' audit entry; non-blocking — failure does not abort the submission
+    void writeAudit({
+      userId,
+      approvalId: data.id,
+      actionType,
+      provider,
+      status: 'proposed',
+      delegation: {
+        user: userId,
+        actor: 'coriven',
+        connection: { provider, nango_connection_id: null },
+      },
+    })
+
+    console.log(JSON.stringify({ event: 'approval_proposed', userId, approvalId: data.id, actionType, provider }))
+
+    return {
+      content: JSON.stringify({
+        approval_id: data.id,
+        status: 'pending',
+        message: `Action queued for your review. Visit /approvals to approve, modify, or cancel.`,
+        action_type: data.action_type,
+        provider: data.provider,
+        created_at: data.created_at,
+      }),
+      is_error: false,
+    }
+  } catch (err) {
+    console.error('[handleSubmitForApproval] unexpected error', { userId, err })
+    return { content: 'Failed to queue the proposed action. Please try again.', is_error: true }
+  }
+}
+
 const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<HandlerResult>> = {
   create_task: handleCreateTask,
   update_task: handleUpdateTask,
@@ -402,6 +473,7 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   set_goal_momentum: handleSetGoalMomentum,
   create_project: handleCreateProject,
   generate_daily_briefing: handleGenerateDailyBriefing,
+  submit_for_approval: handleSubmitForApproval,
 }
 
 export async function executeToolHandler(
