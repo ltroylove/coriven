@@ -1190,6 +1190,12 @@ These are genuine product decisions that the consolidation surfaced. They are **
 
 5. **Pricing validation.** Tiers ($12 / $22, 10-entity free cap) are reasoned but unvalidated. Decide whether to launch with them or test alternatives. The entity cap as the primary paywall is the load-bearing assumption.
 
+   **Market data (2026-07-04 research pass):** The $12/$22 tiers were reasoned before the full integration vision and are likely underpriced. Direct comps: **Martin** (closest analog — AI assistant for email/calendar/SMS/calls) charges $21/mo standard, $30/mo Pro, with Pro gating email pre-drafting and long-term memory — features Coriven treats as core. **Lindy** runs $49.99–$199.99/mo (prosumer, credit-based). **Motion** $19–29/mo. General-AI anchor (ChatGPT Plus / Claude Pro) is $20/mo; the typical professional assistant stack runs $40–70/mo.
+
+   **Cost model per daily-active user:** LLM is the dominant COGS (~$3–10/mo: Sonnet chat + Haiku triage); integrations are nearly free to bundle (Composio-style long-tail ~$0.30–1/user, Nango self-hosted + provider APIs pennies, CASA ~$0.20–0.80/user amortized at 500 users). Total ~$4–12/user/mo. At $22 margins are thin for heavy users; at $30–39, comfortable.
+
+   **Candidate structure to test at productization:** ~$19–22 base (email/calendar assistant, in line with Martin standard, above the ChatGPT anchor because Coriven *acts*); ~$35–39 "Connected Life" tier shipping with the long-tail connector epic, bundled integrations included — bundling at ~$1/user is strictly better UX and economics than any user-pays model (Zapier ruled out at any Coriven price point for this structural reason, not its absolute cost; see ADR-013 Layer 3).
+
 6. **Memory window as a paid limit — technically how?** "24h / 7d / 30d memory window" implies time-bounding retrieval by tier. Confirm this is enforced at retrieval (filter by age) and that it degrades gracefully rather than feeling broken.
 
 7. **Embeddings vendor.** Plan uses OpenAI `text-embedding-3-small` (cheap, proven). Confirm we're comfortable adding OpenAI as a dependency alongside Anthropic, or whether to use an alternative embedding source.
