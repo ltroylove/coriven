@@ -12,13 +12,16 @@ export type ApprovalProvider =
   | 'outlook_calendar'
 
 // Status lifecycle:
-//   pending → approved | cancelled      (user decision)
-//   approved → executed | failed        (Wave 5.3.2 executor)
-//   cancelled, executed, failed         (terminal)
+//   pending   → approved | cancelled      (user decision)
+//   approved  → executing                 (atomic claim in router — M-2 race guard)
+//   executing → executed | failed         (terminal write after provider call)
+//   failed    → executing                 (retry path — conditional claim)
+//   cancelled, executed, failed           (effectively terminal for user actions)
 export type ApprovalStatus =
   | 'pending'
   | 'approved'
   | 'cancelled'
+  | 'executing'
   | 'executed'
   | 'failed'
 

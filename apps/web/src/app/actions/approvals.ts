@@ -5,7 +5,7 @@ import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { writeAudit } from '@/lib/approvals/audit'
 import { validatePayload } from '@/lib/approvals/payload-validator'
 import { executeApprovedAction } from '@/lib/approvals/executors/router'
-import type { ApprovalActionType, ApprovalProvider, ApprovalQueueRow } from '@personal-assistant/types'
+import type { ApprovalActionType, ApprovalProvider } from '@personal-assistant/types'
 import type { Json } from '@/types/supabase'
 
 async function getAuthenticatedUser() {
@@ -83,12 +83,9 @@ export async function approveAction(id: string): Promise<{ error?: string }> {
       },
     })
 
-    // Execute — router writes terminal status + audit entry
-    const approvedItem: ApprovalQueueRow = {
-      ...(item as unknown as ApprovalQueueRow),
-      status: 'approved',
-    }
-    await executeApprovedAction(approvedItem, ['approved'])
+    // Execute — router atomically claims (approved→executing) and re-fetches
+    // the DB-authoritative row before calling any provider (M-2 + M-3).
+    await executeApprovedAction({ id }, ['approved'])
 
     revalidatePath('/approvals')
     return {}
@@ -242,21 +239,10 @@ export async function approveWithModifiedPayload(
       },
     })
 
-    // Execute with the modified payload
-    const approvedItem: ApprovalQueueRow = {
-      id: item.id as string,
-      user_id: item.user_id as string,
-      action_type: item.action_type as ApprovalActionType,
-      provider: item.provider as ApprovalProvider,
-      payload: modifiedPayload as unknown as ApprovalQueueRow['payload'],
-      ai_summary: null,
-      status: 'approved',
-      created_at: new Date().toISOString(),
-      reviewed_at: new Date().toISOString(),
-      executed_at: null,
-      error_code: null,
-    }
-    await executeApprovedAction(approvedItem, ['approved'])
+    // Execute — router atomically claims (approved→executing) and re-fetches
+    // the DB-authoritative row (which now contains the modified payload because
+    // we wrote it above with the status update). M-2 + M-3.
+    await executeApprovedAction({ id }, ['approved'])
 
     revalidatePath('/approvals')
     return {}
@@ -278,13 +264,12 @@ export async function approveWithModifiedPayload(
  * Only valid from 'failed' status. Re-executes the stored (already-approved)
  * payload through the router without requiring a new approval decision.
  *
- * Retry design and CHECK constraint:
- *   The DB CHECK constraint is a simple IN check on the five allowed values
- *   (pending, approved, cancelled, executed, failed). It does NOT restrict
- *   state transitions — the column can be updated to any of those five values
- *   regardless of its current value. This means failed → executed is valid.
- *   The retry action leverages this: it passes allowedStatuses=['failed'] to
- *   the router, which will write 'executed' or 'failed' as the terminal state.
+ * Retry design:
+ *   The router atomically claims the row by transitioning failed → executing
+ *   (M-2 race guard). If two retry requests race, only one will claim the row
+ *   (the other gets invalid_state from the router). Ownership is verified both
+ *   here (eq user_id on the auth client) and in the router (M-3 re-fetch uses
+ *   the service client to confirm the row still exists after claiming).
  *
  * A second audit entry is written for the retry execution outcome.
  */
@@ -292,12 +277,12 @@ export async function retryAction(id: string): Promise<{ error?: string }> {
   try {
     const { supabase, user } = await getAuthenticatedUser()
 
-    // Fetch full row — need payload for re-execution
+    // Auth-scoped ownership check: only the owning user can retry their own item.
     const { data: item, error: fetchError } = await supabase
       .from('approval_queue')
-      .select('id, user_id, status, action_type, provider, payload, ai_summary, created_at, reviewed_at, executed_at, error_code')
+      .select('id, user_id, status')
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('user_id', user.id)  // M-2: own-row scoped like approveAction
       .single()
 
     if (fetchError || !item) {
@@ -308,9 +293,10 @@ export async function retryAction(id: string): Promise<{ error?: string }> {
       return { error: `Cannot retry: item is in status "${item.status}" (only failed items can be retried)` }
     }
 
-    // Router will guard allowedStatuses=['failed'] and write terminal status + audit
-    const failedItem: ApprovalQueueRow = item as unknown as ApprovalQueueRow
-    await executeApprovedAction(failedItem, ['failed'])
+    // Pass only { id } — the router will atomically claim and re-fetch the DB-
+    // authoritative row (M-2 claim + M-3 re-fetch). allowedStatuses=['failed']
+    // means the conditional UPDATE only succeeds from failed state.
+    await executeApprovedAction({ id }, ['failed'])
 
     revalidatePath('/approvals')
     return {}

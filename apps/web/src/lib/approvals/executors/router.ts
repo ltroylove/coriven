@@ -2,43 +2,29 @@
  * Execution router — the single dispatch point for approved actions.
  *
  * Contracts enforced here:
- *   1. Single-execution guard: uses a conditional UPDATE (eq status='approved')
- *      to atomically claim the item before calling any provider. If 0 rows are
- *      updated the item is not in 'approved' state and execution is refused.
- *   2. Provider-routing: dispatches to the correct executor by action_type and
+ *   1. Atomic claim (M-2 race guard): before calling any provider, perform a
+ *      conditional UPDATE that transitions status → 'executing' WHERE status IN
+ *      (allowedStatuses). If 0 rows are updated, another request already claimed
+ *      the item → return { ok: false, errorCode: 'invalid_state' } without
+ *      touching any provider. This eliminates the retry-path race window.
+ *   2. Re-fetch for M-3 (ownership re-verification): after claiming, re-fetch
+ *      the row from the DB using the service-role client and use the DB-
+ *      authoritative user_id/payload for execution. The passed-in row's id is
+ *      trusted for the WHERE clause; all other fields come from the re-fetch.
+ *   3. Provider-routing: dispatches to the correct executor by action_type and
  *      provider. Unknown providers fail closed.
- *   3. Terminal status write: on success → 'executed' + executed_at;
+ *   4. Terminal status write: on success → 'executed' + executed_at;
  *      on failure → 'failed' + error_code. Uses the service-role client so
  *      the write is not subject to RLS and can update any user's item.
  *
- * Status-transition design (race-safe):
- *   The DB CHECK constraint allows: approved → executed | failed.
- *   There is no 'executing' intermediate state in the CHECK constraint.
- *   Instead, we use a conditional UPDATE:
- *     UPDATE approval_queue
- *       SET status = 'executing_sentinel', executed_at = NOW()
- *       WHERE id = ? AND status = 'approved'
- *   but because 'executing_sentinel' is also not in the CHECK, we instead
- *   atomically move directly to the terminal state AFTER the API call, guarded
- *   by the initial conditional read+check described below.
- *
- *   Actual approach (no 'executing' state required):
- *     a) Fetch the row with service-role client (bypasses RLS).
- *     b) If status != 'approved' (or 'failed' for retry path), return invalid_state.
- *     c) Call the provider executor (synchronous within this request).
- *     d) Write terminal status ('executed' or 'failed') atomically.
- *   Race window: two concurrent requests can both pass step (b) and both call
- *   the provider. This is acceptable because:
- *     - approveAction uses the auth client, which already has an eq('status','approved')
- *       guard on the status update from pending→approved, so only one request
- *       can ever land the approved status in the first place.
- *     - The retry action (failed→re-execute) is user-initiated and unlikely to
- *       be concurrent. If it were, the worst outcome is a duplicate send, which
- *       is logged and surfaced as a second audit entry. A true executing sentinel
- *       would require an 'executing' value in the DB CHECK constraint, which does
- *       not exist. The safer-by-design path is to add it in a future migration
- *       when the background-execution model ships (Wave 5.x); for synchronous
- *       execution this design is acceptable per the wave spec.
+ * Status-transition design (race-safe, M-2):
+ *   Before this migration (20260705060000), the DB CHECK allowed only:
+ *     pending, approved, cancelled, executed, failed
+ *   After migration: 'executing' is added, enabling the atomic-claim pattern:
+ *     UPDATE approval_queue SET status = 'executing'
+ *     WHERE id = ? AND status IN ('approved' | 'failed')
+ *   Exactly 1 row affected → claim succeeded.
+ *   0 rows affected → another request already claimed or status changed → bail.
  *
  * ADR-013 Layer 3 seam:
  *   The PROVIDER_ROUTER map below is the designated extension point for the
@@ -80,6 +66,46 @@ const CALENDAR_PROVIDERS = new Set<ProviderKey>(['google_calendar', 'outlook_cal
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Atomically claim the row by transitioning its status to 'executing'.
+ *
+ * Uses a conditional UPDATE with WHERE status IN (allowedStatuses) so that
+ * exactly one concurrent request can succeed. Returns the count of updated
+ * rows: 1 = claimed, 0 = already claimed by another request or status changed.
+ *
+ * This is the M-2 race-condition fix. The 'executing' value was added to the
+ * DB CHECK constraint in migration 20260705060000.
+ */
+async function claimForExecution(
+  id: string,
+  allowedStatuses: Array<ApprovalQueueRow['status']>,
+): Promise<number> {
+  const db = createServiceClient()
+
+  // Supabase JS v2: update() with { count: 'exact' } returns the affected row count.
+  // WHERE id = ? AND status IN (allowedStatuses) ensures only one concurrent
+  // request can transition to 'executing'.
+  const { count, error } = await db
+    .from('approval_queue')
+    .update({ status: 'executing' }, { count: 'exact' })
+    .eq('id', id)
+    .in('status', allowedStatuses)
+
+  if (error) {
+    console.error(
+      JSON.stringify({
+        event: 'executor.router.claim_error',
+        id,
+        allowedStatuses,
+        error: error.message,
+      }),
+    )
+    return 0
+  }
+
+  return count ?? 0
+}
 
 async function writeTerminalStatus(
   id: string,
@@ -189,13 +215,14 @@ async function runConstraintGate(
  * Executes an approved (or retried) approval queue item via the correct provider.
  *
  * Guards:
- *   - `allowedStatuses` controls which DB statuses permit execution.
- *     approveAction passes ['approved']; retryAction passes ['failed'].
- *   - If the row's status is not in allowedStatuses, returns invalid_state
- *     without touching the provider.
+ *   - Atomic claim (M-2): conditionally update status → 'executing' WHERE id=?
+ *     AND status IN (allowedStatuses). If 0 rows affected, bail with invalid_state.
+ *     This eliminates the concurrent-execution race window.
+ *   - Re-fetch (M-3): after claiming, re-fetch the row from DB using the
+ *     service-role client. The DB-authoritative user_id and payload are used
+ *     for all subsequent operations. Only the row id from the caller is trusted.
  *   - Behavioral constraint gate (Wave 5.3.3): evaluated before any executor
- *     runs; fail-closed on error or locked match (contrast with chat gate's
- *     fail-open — external actions are irreversible).
+ *     runs; fail-closed on error or locked match.
  *
  * On success: writes status → 'executed', stamps executed_at, appends audit entry.
  * On failure: writes status → 'failed' + error_code, appends audit entry.
@@ -203,26 +230,64 @@ async function runConstraintGate(
  * Never throws to callers — all errors are caught and surfaced as ExecutionResult.
  */
 export async function executeApprovedAction(
-  approval: ApprovalQueueRow,
+  approval: Pick<ApprovalQueueRow, 'id'> & Partial<ApprovalQueueRow>,
   allowedStatuses: Array<ApprovalQueueRow['status']> = ['approved'],
 ): Promise<ExecutionResult> {
-  // --- State guard ---
-  if (!allowedStatuses.includes(approval.status)) {
+  const { id } = approval
+
+  // --- M-2: Atomic claim — transition to 'executing' WHERE status IN allowedStatuses ---
+  const claimed = await claimForExecution(id, allowedStatuses)
+  if (claimed === 0) {
     console.error(
       JSON.stringify({
         event: 'executor.router.invalid_state',
-        id: approval.id,
-        status: approval.status,
+        id,
         allowedStatuses,
+        reason: 'claim returned 0 rows — concurrent request or status mismatch',
       }),
     )
     return { ok: false, errorCode: 'invalid_state' }
   }
 
-  const { id, user_id, action_type, provider, payload } = approval
+  // --- M-3: Re-fetch DB-authoritative row (do not trust passed-in mutable fields) ---
+  const db = createServiceClient()
+  const { data: row, error: fetchError } = await db
+    .from('approval_queue')
+    .select('id, user_id, action_type, provider, payload')
+    .eq('id', id)
+    .single()
+
+  if (fetchError || !row) {
+    console.error(
+      JSON.stringify({
+        event: 'executor.router.refetch_failed',
+        id,
+        error: fetchError?.message ?? 'row not found after claim',
+      }),
+    )
+    // Write failed status — we claimed but can't proceed
+    await writeTerminalStatus(id, { ok: false, errorCode: 'executor_error' })
+    return { ok: false, errorCode: 'executor_error' }
+  }
+
+  const { user_id, action_type, provider, payload } = row as unknown as ApprovalQueueRow
 
   // --- Behavioral constraint gate (Wave 5.3.3, fail-CLOSED) ---
-  const gate = await runConstraintGate(approval)
+  // Run gate against DB-authoritative row data
+  const approvalForGate: ApprovalQueueRow = {
+    id,
+    user_id,
+    action_type,
+    provider,
+    payload,
+    ai_summary: null,
+    status: 'executing',
+    created_at: new Date().toISOString(),
+    reviewed_at: null,
+    executed_at: null,
+    error_code: null,
+  }
+  const gate = await runConstraintGate(approvalForGate)
   if (gate.blocked) {
     const errorCode =
       gate.reason === 'constraint_check_failed'

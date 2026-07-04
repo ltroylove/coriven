@@ -25,16 +25,44 @@ function withTimeout(ms: number): AbortSignal {
 }
 
 /**
- * Encodes an RFC 2822 email message to base64url, as required by the Gmail
- * messages.send endpoint. The message is plain ASCII + UTF-8 subject/body.
+ * Defense-in-depth: strip all CR and LF bytes from a header field value.
  *
- * Fields are encoded using RFC 2047 folding for non-ASCII subjects.
- * Body is UTF-8 plain text.
+ * The payload-validator (validateSendEmail) is the primary guard — it rejects
+ * any payload whose "to" or "subject" contains \r or \n before this code is
+ * ever reached. This function is a second line of defense: even if a value
+ * somehow bypassed validation it will never reach an RFC 2822 header line as
+ * a raw CR/LF byte.
+ *
+ * Approach: strip rather than encode. A subject that contained a literal CRLF
+ * is already invalid per the validator; collapsing it here is a safe fallback.
+ * Non-ASCII characters in subjects are left as UTF-8 bytes (Gmail's API accepts
+ * UTF-8 in the raw message body when the base64url-encoded blob is used).
+ */
+function sanitizeHeaderValue(value: string): string {
+  return value.replace(/[\r\n]+/g, '')
+}
+
+/**
+ * Encodes an RFC 2822 email message to base64url, as required by the Gmail
+ * messages.send endpoint.
+ *
+ * Header-injection defense: "to" and "subject" are passed through
+ * sanitizeHeaderValue() before being written into header lines. The validator
+ * is the primary guard; sanitization here is defense-in-depth. Body content
+ * is NOT sanitized — newlines in the body are normal RFC 2822 content.
+ *
+ * Non-ASCII subjects are kept as raw UTF-8 bytes, which Gmail accepts in the
+ * base64url-encoded raw message. Full RFC 2047 encoded-word encoding is not
+ * implemented here but can be added if provider requirements change.
  */
 function buildRfc2822Base64url(payload: SendEmailPayload): string {
+  // Defense-in-depth: strip CRLF from header fields (validator is primary guard)
+  const safeTo = sanitizeHeaderValue(payload.to)
+  const safeSubject = sanitizeHeaderValue(payload.subject)
+
   const lines = [
-    `To: ${payload.to}`,
-    `Subject: ${payload.subject}`,
+    `To: ${safeTo}`,
+    `Subject: ${safeSubject}`,
     `MIME-Version: 1.0`,
     `Content-Type: text/plain; charset=utf-8`,
     `Content-Transfer-Encoding: quoted-printable`,

@@ -7,6 +7,14 @@
  *
  * All provider HTTP calls and Nango token fetches are mocked.
  * No live network calls are made.
+ *
+ * M-2/M-3 update: the router now performs 3 DB operations per execution:
+ *   1. claimForExecution — UPDATE status→'executing' WHERE id=? AND status IN (...)
+ *      with {count:'exact'}. Returns {count:1, error:null} on success.
+ *   2. Re-fetch — SELECT ... WHERE id=? .single(). Returns {data:row, error:null}.
+ *   3. writeTerminalStatus — UPDATE status→'executed'|'failed' WHERE id=?.
+ *
+ * The DB client mock is structured to handle each of these call patterns.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -63,16 +71,6 @@ function makeFetchThrow() {
   return vi.fn().mockRejectedValue(new Error('ECONNREFUSED'))
 }
 
-function makeDbClient(updateError: unknown = null) {
-  const mockUpdate = vi.fn().mockReturnValue({
-    eq: vi.fn().mockResolvedValue({ error: updateError }),
-  })
-  return {
-    from: vi.fn().mockReturnValue({ update: mockUpdate }),
-    _mockUpdate: mockUpdate,
-  }
-}
-
 import type { ApprovalQueueRow } from '@personal-assistant/types'
 
 function makeApproval(overrides: Partial<ApprovalQueueRow> = {}): ApprovalQueueRow {
@@ -90,6 +88,81 @@ function makeApproval(overrides: Partial<ApprovalQueueRow> = {}): ApprovalQueueR
     error_code: null,
     ...overrides,
   }
+}
+
+/**
+ * Creates a service DB client mock that handles the router's 3-step DB pattern:
+ *   1. claimForExecution: update(..., {count:'exact'}).eq().in() → {count, error}
+ *   2. Re-fetch:          select().eq().single()               → {data, error}
+ *   3. writeTerminalStatus: update().eq()                      → {error}
+ *
+ * claimCount: number of rows to report as claimed (1 = success, 0 = race lost)
+ * refetchRow: the row data to return from the re-fetch (null = not found)
+ * terminalError: error to return from writeTerminalStatus (null = success)
+ */
+function makeRouterDbClient(opts: {
+  claimCount?: number
+  refetchRow?: Partial<ApprovalQueueRow> | null
+  terminalError?: unknown
+} = {}) {
+  const { claimCount = 1, refetchRow = null, terminalError = null } = opts
+
+  // The default refetchRow uses a standard approval row
+  const defaultRefetchRow = {
+    id: 'approval-1',
+    user_id: 'user-1',
+    action_type: 'send_email',
+    provider: 'gmail',
+    payload: { to: 'test@example.com', subject: 'Hello', body: 'Body text' },
+  }
+  const resolvedRefetchRow = refetchRow !== null ? { ...defaultRefetchRow, ...refetchRow } : defaultRefetchRow
+
+  // Claim step: update({status:'executing'},{count:'exact'}).eq().in()
+  const claimInChain = vi.fn().mockResolvedValue({ count: claimCount, error: null })
+  const claimEqChain = vi.fn().mockReturnValue({ in: claimInChain })
+  const claimUpdateChain = vi.fn().mockReturnValue({ eq: claimEqChain })
+
+  // Re-fetch step: select().eq().single()
+  const refetchSingleChain = vi.fn().mockResolvedValue({
+    data: resolvedRefetchRow,
+    error: null,
+  })
+  const refetchEqChain = vi.fn().mockReturnValue({ single: refetchSingleChain })
+  const refetchSelectChain = vi.fn().mockReturnValue({ eq: refetchEqChain })
+
+  // Terminal status write: update().eq()
+  const terminalEqChain = vi.fn().mockResolvedValue({ error: terminalError })
+  const terminalUpdateChain = vi.fn().mockReturnValue({ eq: terminalEqChain })
+
+  // Each call to createServiceClient() returns a fresh client instance.
+  // The router calls createServiceClient() 3 times:
+  //   call 1: claimForExecution
+  //   call 2: re-fetch
+  //   call 3: writeTerminalStatus
+  const makeClaimClient = () => ({ from: vi.fn().mockReturnValue({ update: claimUpdateChain }) })
+  const makeRefetchClient = () => ({ from: vi.fn().mockReturnValue({ select: refetchSelectChain }) })
+  const makeTerminalClient = () => ({ from: vi.fn().mockReturnValue({ update: terminalUpdateChain }) })
+
+  return {
+    clients: [makeClaimClient(), makeRefetchClient(), makeTerminalClient()],
+    claimCount: claimCount,
+    claimInChain,
+    refetchSingleChain,
+    terminalEqChain,
+  }
+}
+
+/**
+ * Sets up createServiceClient to return clients in sequence (one per call).
+ * The router calls createServiceClient() once per DB operation.
+ */
+function setupServiceClientSequence(clients: object[]) {
+  let callIdx = 0
+  return vi.fn().mockImplementation(() => {
+    const client = clients[callIdx % clients.length]
+    callIdx++
+    return client
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -386,36 +459,56 @@ describe('executeApprovedAction (router)', () => {
     vi.resetModules()
   })
 
-  it('returns invalid_state when item is not in allowed statuses', async () => {
+  it('returns invalid_state when atomic claim returns 0 rows (item not in allowed status)', async () => {
+    // claimCount=0 means the conditional UPDATE matched no rows — item already claimed
+    // or not in the expected status
+    const { claimCount: _, clients } = makeRouterDbClient({ claimCount: 0 })
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue(makeDbClient() as never)
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
 
     const { executeApprovedAction } = await import('../executors/router')
-    const item = makeApproval({ status: 'executed' })
-    const result = await executeApprovedAction(item, ['approved'])
+    // Pass only id — router does the atomic claim and re-fetch
+    const result = await executeApprovedAction({ id: 'approval-1' }, ['approved'])
 
     expect(result.ok).toBe(false)
     expect(result.errorCode).toBe('invalid_state')
   })
 
-  it('refuses double execution — second call with non-approved status is blocked', async () => {
+  it('M-2 double-claim blocked — second concurrent request gets invalid_state', async () => {
+    // Simulate: first request claims (count=1), second request races and gets count=0
+    // (the DB only lets one request win the conditional UPDATE)
     const { getProviderToken } = await import('@/lib/integrations/nango')
-    vi.mocked(getProviderToken).mockResolvedValue(null) // token unavailable keeps it simple
+    vi.mocked(getProviderToken).mockResolvedValue(null) // token unavailable → failed status
+
+    // First call setup: claim succeeds (count=1), re-fetch succeeds, terminal write succeeds
+    const firstDb = makeRouterDbClient({ claimCount: 1 })
+    // Second call setup: claim fails (count=0) — concurrent request lost the race
+    const secondDb = makeRouterDbClient({ claimCount: 0 })
 
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue(makeDbClient() as never)
+    let callCount = 0
+    vi.mocked(createServiceClient).mockImplementation(() => {
+      // First execution uses firstDb.clients (3 calls: claim, refetch, terminal)
+      // Second execution uses secondDb.clients (1 call: claim → bail)
+      if (callCount < 3) {
+        const client = firstDb.clients[callCount % firstDb.clients.length]
+        callCount++
+        return client as never
+      }
+      const client = secondDb.clients[0]
+      callCount++
+      return client as never
+    })
 
     const { executeApprovedAction } = await import('../executors/router')
 
-    // First call: item is 'approved' → attempts execution (token_unavailable → failed)
-    const item = makeApproval({ status: 'approved' })
-    const first = await executeApprovedAction(item, ['approved'])
+    // First call: claim succeeds → token_unavailable (executor fails, but row was claimed)
+    const first = await executeApprovedAction({ id: 'approval-1' }, ['approved'])
     expect(first.ok).toBe(false)
     expect(first.errorCode).toBe('token_unavailable')
 
-    // Second call: if status were already 'executed' or 'failed', router refuses
-    const alreadyExecuted = makeApproval({ status: 'executed' })
-    const second = await executeApprovedAction(alreadyExecuted, ['approved'])
+    // Second call: claim returns 0 rows → invalid_state (race blocked)
+    const second = await executeApprovedAction({ id: 'approval-1' }, ['approved'])
     expect(second.ok).toBe(false)
     expect(second.errorCode).toBe('invalid_state')
   })
@@ -424,14 +517,15 @@ describe('executeApprovedAction (router)', () => {
     const { getProviderToken } = await import('@/lib/integrations/nango')
     vi.mocked(getProviderToken).mockResolvedValue('gmail-tok')
 
+    const { clients } = makeRouterDbClient({ claimCount: 1 })
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue(makeDbClient() as never)
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
 
     const mockFetch = makeFetchOk({ id: 'msg-sent' })
     vi.stubGlobal('fetch', mockFetch)
 
     const { executeApprovedAction } = await import('../executors/router')
-    const result = await executeApprovedAction(makeApproval())
+    const result = await executeApprovedAction({ id: 'approval-1' }, ['approved'])
 
     expect(result.ok).toBe(true)
     const [url] = mockFetch.mock.calls[0] as [string]
@@ -444,8 +538,18 @@ describe('executeApprovedAction (router)', () => {
     const { getProviderToken } = await import('@/lib/integrations/nango')
     vi.mocked(getProviderToken).mockResolvedValue('outlook-tok')
 
+    const { clients } = makeRouterDbClient({
+      claimCount: 1,
+      refetchRow: {
+        id: 'approval-1',
+        user_id: 'user-1',
+        action_type: 'send_email',
+        provider: 'outlook',
+        payload: { to: 'test@example.com', subject: 'Hello', body: 'Body text' },
+      },
+    })
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue(makeDbClient() as never)
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -456,9 +560,7 @@ describe('executeApprovedAction (router)', () => {
     vi.stubGlobal('fetch', mockFetch)
 
     const { executeApprovedAction } = await import('../executors/router')
-    const result = await executeApprovedAction(
-      makeApproval({ provider: 'outlook' }),
-    )
+    const result = await executeApprovedAction({ id: 'approval-1' }, ['approved'])
 
     expect(result.ok).toBe(true)
     const [url] = mockFetch.mock.calls[0] as [string]
@@ -471,15 +573,11 @@ describe('executeApprovedAction (router)', () => {
     const { getProviderToken } = await import('@/lib/integrations/nango')
     vi.mocked(getProviderToken).mockResolvedValue('gcal-tok')
 
-    const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue(makeDbClient() as never)
-
-    const mockFetch = makeFetchOk({ id: 'new-event' })
-    vi.stubGlobal('fetch', mockFetch)
-
-    const { executeApprovedAction } = await import('../executors/router')
-    const result = await executeApprovedAction(
-      makeApproval({
+    const { clients } = makeRouterDbClient({
+      claimCount: 1,
+      refetchRow: {
+        id: 'approval-1',
+        user_id: 'user-1',
         action_type: 'create_calendar_event',
         provider: 'google_calendar',
         payload: {
@@ -487,8 +585,16 @@ describe('executeApprovedAction (router)', () => {
           start: '2026-07-05T09:00:00Z',
           end: '2026-07-05T09:30:00Z',
         },
-      }),
-    )
+      },
+    })
+    const { createServiceClient } = await import('@/lib/supabase/server')
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
+
+    const mockFetch = makeFetchOk({ id: 'new-event' })
+    vi.stubGlobal('fetch', mockFetch)
+
+    const { executeApprovedAction } = await import('../executors/router')
+    const result = await executeApprovedAction({ id: 'approval-1' }, ['approved'])
 
     expect(result.ok).toBe(true)
     expect(result.providerRef).toBe('new-event')
@@ -499,14 +605,21 @@ describe('executeApprovedAction (router)', () => {
   })
 
   it('returns unknown_provider for unrecognised action_type+provider combination', async () => {
+    const { clients } = makeRouterDbClient({
+      claimCount: 1,
+      refetchRow: {
+        id: 'approval-1',
+        user_id: 'user-1',
+        action_type: 'send_email',
+        provider: 'google_calendar', // invalid combo
+        payload: { to: 'test@example.com', subject: 'Hello', body: 'Body' },
+      },
+    })
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue(makeDbClient() as never)
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
 
     const { executeApprovedAction } = await import('../executors/router')
-    // send_email with a calendar provider is an invalid combination
-    const result = await executeApprovedAction(
-      makeApproval({ action_type: 'send_email', provider: 'google_calendar' }),
-    )
+    const result = await executeApprovedAction({ id: 'approval-1' }, ['approved'])
 
     expect(result.ok).toBe(false)
     expect(result.errorCode).toBe('unknown_provider')
@@ -516,9 +629,9 @@ describe('executeApprovedAction (router)', () => {
     const { getProviderToken } = await import('@/lib/integrations/nango')
     vi.mocked(getProviderToken).mockResolvedValue('tok')
 
+    const { clients } = makeRouterDbClient({ claimCount: 1 })
     const { createServiceClient } = await import('@/lib/supabase/server')
-    const db = makeDbClient()
-    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
 
     const { writeAudit } = await import('@/lib/approvals/audit')
     vi.mocked(writeAudit).mockResolvedValue({ success: true })
@@ -526,13 +639,10 @@ describe('executeApprovedAction (router)', () => {
     vi.stubGlobal('fetch', makeFetchFail(500))
 
     const { executeApprovedAction } = await import('../executors/router')
-    const result = await executeApprovedAction(makeApproval())
+    const result = await executeApprovedAction({ id: 'approval-1' }, ['approved'])
 
     expect(result.ok).toBe(false)
     expect(result.errorCode).toBe('provider_rejected')
-
-    // DB should have been called to write status
-    expect(db.from).toHaveBeenCalledWith('approval_queue')
 
     // Audit should have been called with failed status
     expect(writeAudit).toHaveBeenCalledWith(
@@ -546,19 +656,56 @@ describe('executeApprovedAction (router)', () => {
     const { getProviderToken } = await import('@/lib/integrations/nango')
     vi.mocked(getProviderToken).mockResolvedValue('tok')
 
+    const { clients } = makeRouterDbClient({ claimCount: 1 })
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue(makeDbClient() as never)
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
 
     const mockFetch = makeFetchOk({ id: 'msg-retry' })
     vi.stubGlobal('fetch', mockFetch)
 
     const { executeApprovedAction } = await import('../executors/router')
-    const result = await executeApprovedAction(
-      makeApproval({ status: 'failed' }),
-      ['failed'],
-    )
+    // Pass only id — the router handles the claim from 'failed' state
+    const result = await executeApprovedAction({ id: 'approval-1' }, ['failed'])
 
     expect(result.ok).toBe(true)
+
+    vi.unstubAllGlobals()
+  })
+
+  it('M-3: uses DB-authoritative user_id and payload from re-fetch, not caller-supplied values', async () => {
+    // The re-fetch returns different user_id and payload than what we might pass
+    // in from the caller — verifies M-3 owns execution context.
+    const { getProviderToken } = await import('@/lib/integrations/nango')
+    vi.mocked(getProviderToken).mockResolvedValue('tok')
+
+    const { clients } = makeRouterDbClient({
+      claimCount: 1,
+      refetchRow: {
+        id: 'approval-1',
+        user_id: 'user-from-db',  // DB-authoritative user_id
+        action_type: 'send_email',
+        provider: 'gmail',
+        payload: { to: 'db-recipient@example.com', subject: 'DB subject', body: 'DB body' },
+      },
+    })
+    const { createServiceClient } = await import('@/lib/supabase/server')
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
+
+    const { writeAudit } = await import('@/lib/approvals/audit')
+    vi.mocked(writeAudit).mockResolvedValue({ success: true })
+
+    vi.stubGlobal('fetch', makeFetchOk({ id: 'msg-m3' }))
+
+    const { executeApprovedAction } = await import('../executors/router')
+    // Caller passes only { id } — all execution context comes from DB re-fetch
+    const result = await executeApprovedAction({ id: 'approval-1' }, ['approved'])
+
+    expect(result.ok).toBe(true)
+
+    // Audit should use the DB-authoritative user_id, not anything from the caller
+    expect(writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-from-db', status: 'executed' }),
+    )
 
     vi.unstubAllGlobals()
   })
@@ -626,8 +773,19 @@ describe('approveAction (with execution)', () => {
     const { getProviderToken } = await import('@/lib/integrations/nango')
     vi.mocked(getProviderToken).mockResolvedValue('tok')
 
+    // Service client: claim succeeds (count=1), refetch returns the row, terminal write ok
+    const { clients } = makeRouterDbClient({
+      claimCount: 1,
+      refetchRow: {
+        id: 'item-1',
+        user_id: 'user-1',
+        action_type: 'send_email',
+        provider: 'gmail',
+        payload: { to: 'a@example.com', subject: 'S', body: 'B' },
+      },
+    })
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue(makeDbClient() as never)
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
 
     vi.stubGlobal('fetch', makeFetchFail(500))
 
@@ -715,14 +873,112 @@ describe('retryAction', () => {
     const { getProviderToken } = await import('@/lib/integrations/nango')
     vi.mocked(getProviderToken).mockResolvedValue('tok')
 
+    // Service client: claim from 'failed' (count=1), re-fetch row, terminal write
+    const { clients } = makeRouterDbClient({
+      claimCount: 1,
+      refetchRow: {
+        id: 'item-2',
+        user_id: 'user-1',
+        action_type: 'send_email',
+        provider: 'gmail',
+        payload: { to: 'b@example.com', subject: 'Retry', body: 'Body' },
+      },
+    })
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue(makeDbClient() as never)
+    vi.mocked(createServiceClient).mockImplementation(setupServiceClientSequence(clients))
 
     vi.stubGlobal('fetch', makeFetchOk({ id: 'msg-retry-ok' }))
 
     const { retryAction } = await import('../../../app/actions/approvals')
     const result = await retryAction('item-2')
     expect(result.error).toBeUndefined()
+
+    vi.unstubAllGlobals()
+  })
+
+  it('M-2 retry race blocked — second concurrent retry gets invalid_state from router', async () => {
+    // Demonstrates that two concurrent retries cannot both execute:
+    // the auth check passes for both (they see status='failed'), but the atomic
+    // claim in the router ensures only one proceeds to the provider.
+    const { createAuthServerClient } = await import('@/lib/supabase/auth-server')
+    const mockSingle = vi.fn().mockResolvedValue({
+      data: {
+        id: 'item-race',
+        user_id: 'user-1',
+        status: 'failed',
+        action_type: 'send_email',
+        provider: 'gmail',
+        payload: { to: 'c@example.com', subject: 'Race', body: 'Body' },
+        ai_summary: null,
+        created_at: new Date().toISOString(),
+        reviewed_at: new Date().toISOString(),
+        executed_at: null,
+        error_code: 'network_error',
+      },
+      error: null,
+    })
+    const mockSelectEq2 = vi.fn().mockReturnValue({ single: mockSingle })
+    const mockSelectEq1 = vi.fn().mockReturnValue({ eq: mockSelectEq2 })
+    const mockSelect = vi.fn().mockReturnValue({ eq: mockSelectEq1 })
+    vi.mocked(createAuthServerClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
+      from: vi.fn().mockReturnValue({ select: mockSelect }),
+    } as never)
+
+    const { getProviderToken } = await import('@/lib/integrations/nango')
+    vi.mocked(getProviderToken).mockResolvedValue('tok')
+
+    // First retry: claim succeeds (count=1), re-fetch, terminal write
+    const firstDb = makeRouterDbClient({
+      claimCount: 1,
+      refetchRow: {
+        id: 'item-race',
+        user_id: 'user-1',
+        action_type: 'send_email',
+        provider: 'gmail',
+        payload: { to: 'c@example.com', subject: 'Race', body: 'Body' },
+      },
+    })
+    // Second retry: claim fails (count=0) — first request already claimed the row
+    const secondDb = makeRouterDbClient({ claimCount: 0 })
+
+    const { createServiceClient } = await import('@/lib/supabase/server')
+    let callIdx = 0
+    vi.mocked(createServiceClient).mockImplementation(() => {
+      // First 3 calls (claim, refetch, terminal) go to firstDb.clients
+      if (callIdx < 3) {
+        const client = firstDb.clients[callIdx % firstDb.clients.length]
+        callIdx++
+        return client as never
+      }
+      // 4th call (second retry's claim) goes to secondDb.clients[0]
+      callIdx++
+      return secondDb.clients[0] as never
+    })
+
+    vi.stubGlobal('fetch', makeFetchOk({ id: 'msg-first-wins' }))
+
+    const { retryAction } = await import('../../../app/actions/approvals')
+
+    // First retry succeeds
+    const first = await retryAction('item-race')
+    expect(first.error).toBeUndefined()
+
+    // Second retry: auth check passes (sees status='failed' in the mock — in prod
+    // the auth client would see 'executing' and return 'failed' check error),
+    // but the router's atomic claim returns 0 → invalid_state path.
+    // The retryAction doesn't surface invalid_state as an error to the UI
+    // (it logs it internally). In production the auth-client row read would see
+    // 'executing' and fail the status check.
+    const second = await retryAction('item-race')
+    // Either the router's claim blocked it (no error from retryAction itself)
+    // or the auth check caught it. Both are acceptable outcomes.
+    // What must NOT happen: both calls execute the provider successfully.
+    // The fetch mock is called from the first retry only.
+    const fetchCallCount = vi.mocked(global.fetch as ReturnType<typeof vi.fn>).mock.calls.length
+    expect(fetchCallCount).toBe(1) // only one provider call, not two
+
+    void second // suppress unused warning
 
     vi.unstubAllGlobals()
   })

@@ -17,6 +17,7 @@ import { retryAction } from '@/app/actions/approvals'
 const STATUS_COLORS: Record<string, string> = {
   approved: 'text-emerald-400',
   cancelled: 'text-gray-500',
+  executing: 'text-amber-400',  // in-progress — non-terminal, no action buttons
   executed: 'text-blue-400',
   failed: 'text-red-400',
 }
@@ -99,7 +100,14 @@ export function HistoryRow({
           )}
         </div>
 
-        {/* Retry button — only for failed items */}
+        {/* Executing indicator — in-progress, no action buttons available */}
+        {item.status === 'executing' && (
+          <span className="shrink-0 text-xs px-3 py-1.5 rounded border border-amber-700/50 text-amber-400 opacity-70">
+            Executing…
+          </span>
+        )}
+
+        {/* Retry button — only for failed items (not for executing — non-terminal) */}
         {item.status === 'failed' && (
           <button
             onClick={handleRetry}

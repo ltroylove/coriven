@@ -97,12 +97,78 @@ function makeUnlockedConstraint(rule: string): BehavioralConstraint {
   return { ...makeLockedConstraint(rule), id: 'c-2', is_locked: false }
 }
 
-/** Build a Supabase service client mock that captures update calls. */
-function makeServiceDb(updateError: unknown = null) {
-  const updateEq = vi.fn().mockResolvedValue({ error: updateError })
-  const update = vi.fn().mockReturnValue({ eq: updateEq })
-  const from = vi.fn().mockReturnValue({ update })
-  return { from, _update: update, _updateEq: updateEq }
+/**
+ * Build a Supabase service client mock that handles the router's 3-step pattern:
+ *   1. claimForExecution: update({status:'executing'},{count:'exact'}).eq().in()
+ *      → {count:claimCount, error:null}
+ *   2. re-fetch:          select().eq().single()
+ *      → {data:refetchRow, error:null}
+ *   3. writeTerminalStatus: update({status:'executed'|'failed'}).eq()
+ *      → {error:terminalError}
+ *
+ * Since the router calls createServiceClient() once per operation, each call
+ * returns the next client in the sequence via the callCount counter.
+ *
+ * When claimCount is 0 the router bails after step 1 (no re-fetch, no terminal write).
+ */
+function makeServiceDb(opts: {
+  claimCount?: number
+  refetchRow?: Record<string, unknown>
+  terminalError?: unknown
+} = {}) {
+  const {
+    claimCount = 1,
+    refetchRow = {
+      id: 'approval-zt-1',
+      user_id: 'user-zt',
+      action_type: 'send_email',
+      provider: 'gmail',
+      payload: { to: 'recipient@example.com', subject: 'Hello', body: 'Body text' },
+    },
+    terminalError = null,
+  } = opts
+
+  // Step 1: claim — update({count:'exact'}).eq().in()
+  const claimIn = vi.fn().mockResolvedValue({ count: claimCount, error: null })
+  const claimEq = vi.fn().mockReturnValue({ in: claimIn })
+  const claimUpdate = vi.fn().mockReturnValue({ eq: claimEq })
+  const claimFrom = vi.fn().mockReturnValue({ update: claimUpdate })
+
+  // Step 2: re-fetch — select().eq().single()
+  const refetchSingle = vi.fn().mockResolvedValue({ data: refetchRow, error: null })
+  const refetchEq = vi.fn().mockReturnValue({ single: refetchSingle })
+  const refetchSelect = vi.fn().mockReturnValue({ eq: refetchEq })
+  const refetchFrom = vi.fn().mockReturnValue({ select: refetchSelect })
+
+  // Step 3: terminal status write — update().eq()
+  const terminalEq = vi.fn().mockResolvedValue({ error: terminalError })
+  const terminalUpdate = vi.fn().mockReturnValue({ eq: terminalEq })
+  const terminalFrom = vi.fn().mockReturnValue({ update: terminalUpdate })
+
+  const clients = [
+    { from: claimFrom },
+    { from: refetchFrom },
+    { from: terminalFrom },
+  ]
+  let callIdx = 0
+
+  return {
+    // Exposed for createServiceClient mock — each call returns the next client
+    nextClient: () => {
+      const client = clients[Math.min(callIdx, clients.length - 1)]
+      callIdx++
+      return client
+    },
+    // Direct references for assertion
+    _claimUpdate: claimUpdate,
+    _update: terminalUpdate,
+    _updateEq: terminalEq,
+  }
+}
+
+/** Convenience: sets up createServiceClient to use a makeServiceDb's nextClient sequence. */
+function setupServiceDb(db: ReturnType<typeof makeServiceDb>, createServiceClientMock: ReturnType<typeof vi.fn>) {
+  createServiceClientMock.mockImplementation(() => db.nextClient() as never)
 }
 
 // ---------------------------------------------------------------------------
@@ -230,42 +296,46 @@ describe('I3: executeApprovedAction refuses rows not in allowed statuses', () =>
     vi.resetModules()
   })
 
-  async function setupRouter() {
+  async function setupRouter(claimCount = 0) {
+    // claimCount=0: the DB claim returns 0 rows (item not in allowed status → invalid_state)
+    // This is the expected behavior for I3 — the DB's conditional UPDATE fails because
+    // the status doesn't match allowedStatuses.
     const { createServiceClient } = await import('@/lib/supabase/server')
-    const db = makeServiceDb()
-    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    const db = makeServiceDb({ claimCount })
+    setupServiceDb(db, vi.mocked(createServiceClient))
     const { executeApprovedAction } = await import('../executors/router')
     const { getProviderToken } = await import('@/lib/integrations/nango')
     return { executeApprovedAction, getProviderToken, db }
   }
 
   it('refuses pending status', async () => {
-    const { executeApprovedAction, getProviderToken } = await setupRouter()
-    const result = await executeApprovedAction(makeApproval({ status: 'pending' }), ['approved'])
+    // The DB claim (WHERE status IN ['approved']) will not match a 'pending' row → count=0
+    const { executeApprovedAction, getProviderToken } = await setupRouter(0)
+    const result = await executeApprovedAction({ id: 'approval-zt-1' }, ['approved'])
     expect(result.ok).toBe(false)
     expect(result.errorCode).toBe('invalid_state')
     expect(vi.mocked(getProviderToken)).not.toHaveBeenCalled()
   })
 
   it('refuses cancelled status', async () => {
-    const { executeApprovedAction, getProviderToken } = await setupRouter()
-    const result = await executeApprovedAction(makeApproval({ status: 'cancelled' }), ['approved'])
+    const { executeApprovedAction, getProviderToken } = await setupRouter(0)
+    const result = await executeApprovedAction({ id: 'approval-zt-1' }, ['approved'])
     expect(result.ok).toBe(false)
     expect(result.errorCode).toBe('invalid_state')
     expect(vi.mocked(getProviderToken)).not.toHaveBeenCalled()
   })
 
   it('refuses executed status when only approved is allowed', async () => {
-    const { executeApprovedAction, getProviderToken } = await setupRouter()
-    const result = await executeApprovedAction(makeApproval({ status: 'executed' }), ['approved'])
+    const { executeApprovedAction, getProviderToken } = await setupRouter(0)
+    const result = await executeApprovedAction({ id: 'approval-zt-1' }, ['approved'])
     expect(result.ok).toBe(false)
     expect(result.errorCode).toBe('invalid_state')
     expect(vi.mocked(getProviderToken)).not.toHaveBeenCalled()
   })
 
   it('refuses failed status when only approved is allowed', async () => {
-    const { executeApprovedAction, getProviderToken } = await setupRouter()
-    const result = await executeApprovedAction(makeApproval({ status: 'failed' }), ['approved'])
+    const { executeApprovedAction, getProviderToken } = await setupRouter(0)
+    const result = await executeApprovedAction({ id: 'approval-zt-1' }, ['approved'])
     expect(result.ok).toBe(false)
     expect(result.errorCode).toBe('invalid_state')
     expect(vi.mocked(getProviderToken)).not.toHaveBeenCalled()
@@ -287,15 +357,16 @@ describe('I4: constraint gate fail-closed when evaluator throws', () => {
     vi.mocked(loadConstraintsForUser).mockRejectedValue(new Error('DB timeout'))
 
     const { createServiceClient } = await import('@/lib/supabase/server')
-    const db = makeServiceDb()
-    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    // claimCount=1: the claim succeeds (item is in 'approved' state), so the
+    // constraint gate runs and fails-closed after the claim.
+    const db = makeServiceDb({ claimCount: 1 })
+    setupServiceDb(db, vi.mocked(createServiceClient))
 
     const { writeAudit } = await import('@/lib/approvals/audit')
     const { getProviderToken } = await import('@/lib/integrations/nango')
     const { executeApprovedAction } = await import('../executors/router')
 
-    const approval = makeApproval({ status: 'approved' })
-    const result = await executeApprovedAction(approval, ['approved'])
+    const result = await executeApprovedAction({ id: 'approval-zt-1' }, ['approved'])
 
     // Must be blocked
     expect(result.ok).toBe(false)
@@ -304,7 +375,7 @@ describe('I4: constraint gate fail-closed when evaluator throws', () => {
     // Provider must NOT have been called
     expect(vi.mocked(getProviderToken)).not.toHaveBeenCalled()
 
-    // DB must have been updated to failed
+    // DB must have been updated to failed (terminal write)
     expect(db._update).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'failed', error_code: 'constraint_check_failed' }),
     )
@@ -343,15 +414,15 @@ describe('I5: locked constraint blocks execution', () => {
     })
 
     const { createServiceClient } = await import('@/lib/supabase/server')
-    const db = makeServiceDb()
-    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    // claimCount=1: claim succeeds, then constraint gate blocks after re-fetch
+    const db = makeServiceDb({ claimCount: 1 })
+    setupServiceDb(db, vi.mocked(createServiceClient))
 
     const { writeAudit } = await import('@/lib/approvals/audit')
     const { getProviderToken } = await import('@/lib/integrations/nango')
     const { executeApprovedAction } = await import('../executors/router')
 
-    const approval = makeApproval({ status: 'approved' })
-    const result = await executeApprovedAction(approval, ['approved'])
+    const result = await executeApprovedAction({ id: 'approval-zt-1' }, ['approved'])
 
     expect(result.ok).toBe(false)
     expect(result.errorCode).toBe('constraint_blocked')
@@ -359,7 +430,7 @@ describe('I5: locked constraint blocks execution', () => {
     // No provider call
     expect(vi.mocked(getProviderToken)).not.toHaveBeenCalled()
 
-    // DB set to failed
+    // DB set to failed (terminal write — step 3 in the sequence)
     expect(db._update).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'failed', error_code: 'constraint_blocked' }),
     )
@@ -397,16 +468,17 @@ describe('I6: unlocked constraint match does not block execution', () => {
     })
 
     const { createServiceClient } = await import('@/lib/supabase/server')
-    const db = makeServiceDb()
-    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    // claimCount=1: claim succeeds → constraint advisory → proceed to executor
+    // (executor returns token_unavailable → terminal write)
+    const db = makeServiceDb({ claimCount: 1 })
+    setupServiceDb(db, vi.mocked(createServiceClient))
 
     // Token is null → executor returns token_unavailable, but execution was attempted
     const { getProviderToken } = await import('@/lib/integrations/nango')
     vi.mocked(getProviderToken).mockResolvedValue(null)
 
     const { executeApprovedAction } = await import('../executors/router')
-    const approval = makeApproval({ status: 'approved' })
-    const result = await executeApprovedAction(approval, ['approved'])
+    const result = await executeApprovedAction({ id: 'approval-zt-1' }, ['approved'])
 
     // Execution was attempted (not blocked by constraint)
     // With null token it fails at the executor level, not the gate

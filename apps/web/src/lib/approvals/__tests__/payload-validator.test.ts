@@ -121,3 +121,141 @@ describe('validatePayload — update_calendar_event', () => {
     expect(result.errors.some((e) => e.includes('at least one field'))).toBe(true)
   })
 })
+
+// ---------------------------------------------------------------------------
+// H-1 regression: CRLF injection in send_email header fields
+// ---------------------------------------------------------------------------
+
+describe('validatePayload — send_email CRLF injection (H-1)', () => {
+  it('rejects "to" containing \\n (LF)', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@example.com\nBcc: attacker@evil.com',
+      subject: 'Hello',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('CR or LF'))).toBe(true)
+  })
+
+  it('rejects "to" containing \\r (CR)', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@example.com\rBcc: attacker@evil.com',
+      subject: 'Hello',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('CR or LF'))).toBe(true)
+  })
+
+  it('rejects "to" containing \\r\\n (CRLF)', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@example.com\r\nBcc: attacker@evil.com',
+      subject: 'Hello',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('CR or LF'))).toBe(true)
+  })
+
+  it('rejects "subject" containing \\n (LF)', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@example.com',
+      subject: 'Hello\nX-Injected: evil',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('CR or LF'))).toBe(true)
+  })
+
+  it('rejects "subject" containing \\r\\n (CRLF)', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@example.com',
+      subject: 'Hello\r\nX-Injected: evil',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('CR or LF'))).toBe(true)
+  })
+
+  it('allows "body" to contain newlines (body content is exempt)', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@example.com',
+      subject: 'Hello',
+      body: 'Line one\nLine two\r\nLine three',
+    })
+    expect(result.valid).toBe(true)
+  })
+
+  it('accepts clean to/subject with no CRLF', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@example.com',
+      subject: 'Normal subject',
+      body: 'Body text',
+    })
+    expect(result.valid).toBe(true)
+    expect(result.errors).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L-1 regression: email format validation in send_email
+// ---------------------------------------------------------------------------
+
+describe('validatePayload — send_email email format validation (L-1)', () => {
+  it('rejects "to" with no @ sign', () => {
+    const result = validatePayload('send_email', {
+      to: 'notanemail',
+      subject: 'Hello',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('valid email address'))).toBe(true)
+  })
+
+  it('rejects "to" with missing domain', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@',
+      subject: 'Hello',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('valid email address'))).toBe(true)
+  })
+
+  it('rejects "to" with missing TLD', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@example',
+      subject: 'Hello',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.includes('valid email address'))).toBe(true)
+  })
+
+  it('accepts a standard email address', () => {
+    const result = validatePayload('send_email', {
+      to: 'alice@example.com',
+      subject: 'Hello',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(true)
+  })
+
+  it('accepts an email with subdomain', () => {
+    const result = validatePayload('send_email', {
+      to: 'user@mail.example.co.uk',
+      subject: 'Hello',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(true)
+  })
+
+  it('accepts an email with plus addressing', () => {
+    const result = validatePayload('send_email', {
+      to: 'user+tag@example.com',
+      subject: 'Hello',
+      body: 'Hi',
+    })
+    expect(result.valid).toBe(true)
+  })
+})

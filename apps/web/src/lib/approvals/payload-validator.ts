@@ -29,17 +29,59 @@ const KNOWN_ACTION_TYPES: ReadonlySet<string> = new Set([
 // Per-action validators
 // ---------------------------------------------------------------------------
 
+/**
+ * RFC-5322-ish email address regex.
+ * Accepts the vast majority of real addresses; rejects obviously invalid ones.
+ * Does NOT attempt full RFC 5321 compliance — a simple heuristic is sufficient
+ * here because the provider will ultimately validate deliverability.
+ */
+const EMAIL_REGEX = /^[^\s@<>()[\]\\,;:]+@[^\s@<>()[\]\\,;:]+\.[^\s@<>()[\]\\,;:]{2,}$/
+
+/**
+ * CRLF injection guard for email header fields (to, subject).
+ *
+ * HTTP header injection and RFC 2822 header injection both require a CR or LF
+ * byte to start a new header line. The body is exempt — newlines are normal
+ * content there.
+ *
+ * Returns true if the string contains \r or \n.
+ */
+function hasCRLF(value: string): boolean {
+  return /[\r\n]/.test(value)
+}
+
 function validateSendEmail(payload: Record<string, unknown>): ValidationResult {
   const errors: string[] = []
+
+  // --- "to" field ---
   if (!payload.to || typeof payload.to !== 'string' || !payload.to.trim()) {
     errors.push('send_email: "to" (recipient email) is required')
+  } else {
+    // H-1: CRLF injection guard
+    if (hasCRLF(payload.to)) {
+      errors.push('send_email: "to" must not contain CR or LF characters (CRLF injection)')
+    }
+    // L-1: basic email format validation
+    if (!EMAIL_REGEX.test(payload.to.trim())) {
+      errors.push('send_email: "to" must be a valid email address')
+    }
   }
+
+  // --- "subject" field ---
   if (!payload.subject || typeof payload.subject !== 'string' || !payload.subject.trim()) {
     errors.push('send_email: "subject" is required')
+  } else {
+    // H-1: CRLF injection guard (body is exempt — newlines are normal there)
+    if (hasCRLF(payload.subject)) {
+      errors.push('send_email: "subject" must not contain CR or LF characters (CRLF injection)')
+    }
   }
+
+  // --- "body" field — newlines are intentional content; no CRLF check here ---
   if (!payload.body || typeof payload.body !== 'string' || !payload.body.trim()) {
     errors.push('send_email: "body" is required')
   }
+
   return { valid: errors.length === 0, errors }
 }
 

@@ -13,15 +13,56 @@ vi.mock('@/lib/approvals/audit', () => ({
 vi.mock('@/lib/integrations/nango', () => ({
   getProviderToken: vi.fn().mockResolvedValue(null),
 }))
-vi.mock('@/lib/supabase/server', () => ({
-  createServiceClient: vi.fn().mockReturnValue({
-    from: vi.fn().mockReturnValue({
-      update: vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      }),
-    }),
-  }),
+// Constraint system — default to no constraints (gate passes)
+vi.mock('@/lib/chat/constraints/loader', () => ({
+  loadConstraintsForUser: vi.fn().mockResolvedValue([]),
 }))
+vi.mock('@/lib/chat/constraints/evaluator', () => ({
+  evaluateConstraint: vi.fn().mockReturnValue({ matched: false }),
+}))
+// Service client mock supports the router's 3-step DB pattern (M-2/M-3):
+//   call 1: claimForExecution — update({count:'exact'}).eq().in() → {count:1, error:null}
+//   call 2: re-fetch           — select().eq().single()           → {data:defaultRow, error:null}
+//   call 3: writeTerminalStatus — update().eq()                   → {error:null}
+// createServiceClient is called once per step; the mock rotates through clients.
+vi.mock('@/lib/supabase/server', () => {
+  let callIdx = 0
+
+  const defaultRow = {
+    id: 'item-1',
+    user_id: 'user-1',
+    action_type: 'send_email',
+    provider: 'gmail',
+    payload: { to: 'a@example.com', subject: 'S', body: 'B' },
+  }
+
+  // Step 1: claim — update({count:'exact'}).eq().in() → {count:1, error:null}
+  const claimIn = () => Promise.resolve({ count: 1, error: null })
+  const claimEq = () => ({ in: claimIn })
+  const claimUpdate = () => ({ eq: claimEq })
+  const makeClaimClient = () => ({ from: () => ({ update: claimUpdate }) })
+
+  // Step 2: re-fetch — select().eq().single() → {data:defaultRow, error:null}
+  const refetchSingle = () => Promise.resolve({ data: defaultRow, error: null })
+  const refetchEq = () => ({ single: refetchSingle })
+  const refetchSelect = () => ({ eq: refetchEq })
+  const makeRefetchClient = () => ({ from: () => ({ select: refetchSelect }) })
+
+  // Step 3: terminal status write — update().eq() → {error:null}
+  const terminalEq = () => Promise.resolve({ error: null })
+  const terminalUpdate = () => ({ eq: terminalEq })
+  const makeTerminalClient = () => ({ from: () => ({ update: terminalUpdate }) })
+
+  const clients = [makeClaimClient(), makeRefetchClient(), makeTerminalClient()]
+
+  return {
+    createServiceClient: vi.fn().mockImplementation(() => {
+      const client = clients[callIdx % clients.length]
+      callIdx++
+      return client
+    }),
+  }
+})
 
 // ---------------------------------------------------------------------------
 // Shared mock factory helpers
