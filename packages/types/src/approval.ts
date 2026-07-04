@@ -102,12 +102,14 @@ export interface AuditLogRow {
 
 /** Stable error codes returned by executors. */
 export type ExecutionErrorCode =
-  | 'invalid_state'       // item was not in a state that permits execution
-  | 'unknown_provider'    // provider not recognised by router
-  | 'token_unavailable'   // Nango returned null — not connected or token revoked
-  | 'provider_rejected'   // provider API returned a non-2xx response
-  | 'network_error'       // fetch threw (timeout, DNS, etc.)
-  | 'executor_error'      // unexpected executor-internal failure
+  | 'invalid_state'           // item was not in a state that permits execution
+  | 'unknown_provider'        // provider not recognised by router
+  | 'token_unavailable'       // Nango returned null — not connected or token revoked
+  | 'provider_rejected'       // provider API returned a non-2xx response
+  | 'network_error'           // fetch threw (timeout, DNS, etc.)
+  | 'executor_error'          // unexpected executor-internal failure
+  | 'constraint_blocked'      // a locked behavioral constraint matched the action
+  | 'constraint_check_failed' // constraint evaluator threw or timed out (fail-closed)
 
 export interface ExecutionResult {
   ok: boolean
