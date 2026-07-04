@@ -16,12 +16,16 @@
  *   fetched via the 'outlook' integration row.
  *
  * CANCELLED EVENT HANDLING:
- *   After upserting the events returned by the provider, any calendar_events row
- *   for this user + provider whose synced_at is older than the run's timestamp
- *   is deleted. Because the provider only returns events in the sync window
+ *   After a SUCCESSFUL fetch (result.ok === true), any calendar_events row for
+ *   this user + provider whose synced_at is older than the run's timestamp is
+ *   deleted. Because the provider only returns events in the sync window
  *   (now → +14 days), this correctly removes events that were cancelled/deleted
  *   in the provider calendar between sync cycles. Events outside the window are
  *   not touched (they age out naturally as future syncs advance the window).
+ *   The reconcile-delete is SKIPPED when the fetch failed (result.ok === false),
+ *   because a failure returns an empty event list that must not be mistaken for
+ *   "the calendar is now empty" — otherwise a transient error would wipe the
+ *   user's entire cached calendar.
  */
 
 import { createServiceClient } from '@/lib/supabase/server'
@@ -112,7 +116,7 @@ export async function syncCalendars(): Promise<SyncResult> {
     const runAt = new Date().toISOString()
 
     try {
-      const events = await fetchUpcomingEvents(userId, calendarProvider)
+      const { ok, events } = await fetchUpcomingEvents(userId, calendarProvider)
 
       if (events.length > 0) {
         const rows = events.map((e) => ({
@@ -152,21 +156,37 @@ export async function syncCalendars(): Promise<SyncResult> {
       // Remove cancelled events: delete rows in this user+provider scope
       // whose synced_at was not updated in this run (i.e., provider no longer
       // returns them within the sync window).
-      const { error: deleteError } = await supabase
-        .from('calendar_events')
-        .delete()
-        .eq('user_id', userId)
-        .eq('provider', calendarProvider)
-        .lt('synced_at', runAt)
+      //
+      // CRITICAL: only reconcile-delete when the fetch actually SUCCEEDED. A
+      // failed fetch (token error, provider outage, parse failure) returns
+      // ok:false with events:[] — running the stale-delete then would wipe the
+      // user's entire cached calendar on any transient error. Skip delete unless
+      // ok is true.
+      if (ok) {
+        const { error: deleteError } = await supabase
+          .from('calendar_events')
+          .delete()
+          .eq('user_id', userId)
+          .eq('provider', calendarProvider)
+          .lt('synced_at', runAt)
 
-      if (deleteError) {
-        // Non-fatal: stale rows left behind are a monitoring concern, not a data-integrity failure
-        console.error(
+        if (deleteError) {
+          // Non-fatal: stale rows left behind are a monitoring concern, not a data-integrity failure
+          console.error(
+            JSON.stringify({
+              event: 'calendar.sync.delete_stale_error',
+              userId,
+              calendarProvider,
+              error: deleteError.message,
+            }),
+          )
+        }
+      } else {
+        console.warn(
           JSON.stringify({
-            event: 'calendar.sync.delete_stale_error',
+            event: 'calendar.sync.fetch_failed_skip_reconcile',
             userId,
             calendarProvider,
-            error: deleteError.message,
           }),
         )
       }
@@ -176,6 +196,7 @@ export async function syncCalendars(): Promise<SyncResult> {
           event: 'calendar.sync.user_done',
           userId,
           calendarProvider,
+          ok,
           eventsFetched: events.length,
         }),
       )

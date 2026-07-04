@@ -263,45 +263,45 @@ describe('normalizeOutlookEvent — all-day events', () => {
 // fetchUpcomingEvents — token-missing case (fault isolation)
 // ---------------------------------------------------------------------------
 
-describe('fetchUpcomingEvents — token-missing returns []', () => {
+describe('fetchUpcomingEvents — failures return ok:false (never delete-safe)', () => {
   beforeEach(() => {
     mockGetProviderToken.mockReset()
     mockFetch.mockReset()
   })
 
-  it('returns [] for google_calendar when token is null (not connected)', async () => {
+  it('returns ok:false for google_calendar when token is null (not connected)', async () => {
     mockGetProviderToken.mockResolvedValueOnce(null)
     const result = await fetchUpcomingEvents('user-1', 'google_calendar')
-    expect(result).toEqual([])
+    expect(result).toEqual({ ok: false, events: [] })
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
-  it('returns [] for outlook_calendar when token is null (outlook not connected)', async () => {
+  it('returns ok:false for outlook_calendar when token is null (outlook not connected)', async () => {
     mockGetProviderToken.mockResolvedValueOnce(null)
     const result = await fetchUpcomingEvents('user-1', 'outlook_calendar')
-    expect(result).toEqual([])
+    expect(result).toEqual({ ok: false, events: [] })
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
-  it('returns [] when Google API returns a non-200 status', async () => {
+  it('returns ok:false when Google API returns a non-200 status', async () => {
     mockGetProviderToken.mockResolvedValueOnce('fake-token')
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 } as Response)
     const result = await fetchUpcomingEvents('user-1', 'google_calendar')
-    expect(result).toEqual([])
+    expect(result).toEqual({ ok: false, events: [] })
   })
 
-  it('returns [] when Outlook API returns a non-200 status', async () => {
+  it('returns ok:false when Outlook API returns a non-200 status', async () => {
     mockGetProviderToken.mockResolvedValueOnce('fake-token')
     mockFetch.mockResolvedValueOnce({ ok: false, status: 403 } as Response)
     const result = await fetchUpcomingEvents('user-1', 'outlook_calendar')
-    expect(result).toEqual([])
+    expect(result).toEqual({ ok: false, events: [] })
   })
 
-  it('returns [] when fetch itself throws (network error)', async () => {
+  it('returns ok:false when fetch itself throws (network error)', async () => {
     mockGetProviderToken.mockResolvedValueOnce('fake-token')
     mockFetch.mockRejectedValueOnce(new Error('Network failure'))
     const result = await fetchUpcomingEvents('user-1', 'google_calendar')
-    expect(result).toEqual([])
+    expect(result).toEqual({ ok: false, events: [] })
   })
 })
 
@@ -325,9 +325,10 @@ describe('fetchUpcomingEvents — successful fetch returns normalized events', (
     } as unknown as Response)
 
     const result = await fetchUpcomingEvents('user-1', 'google_calendar')
-    expect(result).toHaveLength(1)
-    expect(result[0].eventId).toBe('google-event-1')
-    expect(result[0].title).toBe('Team Standup')
+    expect(result.ok).toBe(true)
+    expect(result.events).toHaveLength(1)
+    expect(result.events[0].eventId).toBe('google-event-1')
+    expect(result.events[0].title).toBe('Team Standup')
   })
 
   it('normalizes Outlook Calendar events from a successful API response', async () => {
@@ -340,9 +341,10 @@ describe('fetchUpcomingEvents — successful fetch returns normalized events', (
     } as unknown as Response)
 
     const result = await fetchUpcomingEvents('user-1', 'outlook_calendar')
-    expect(result).toHaveLength(1)
-    expect(result[0].eventId).toBe('outlook-event-1')
-    expect(result[0].title).toBe('Project Review')
+    expect(result.ok).toBe(true)
+    expect(result.events).toHaveLength(1)
+    expect(result.events[0].eventId).toBe('outlook-event-1')
+    expect(result.events[0].title).toBe('Project Review')
   })
 
   it('uses "outlook" provider key when fetching token for outlook_calendar', async () => {
@@ -369,13 +371,13 @@ describe('fetchUpcomingEvents — successful fetch returns normalized events', (
     expect(mockGetProviderToken).toHaveBeenCalledWith('user-1', 'google_calendar')
   })
 
-  it('returns [] for empty items array', async () => {
+  it('returns ok:true with empty events for an empty items array', async () => {
     mockGetProviderToken.mockResolvedValueOnce('google-token')
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ items: [] }),
     } as unknown as Response)
     const result = await fetchUpcomingEvents('user-1', 'google_calendar')
-    expect(result).toEqual([])
+    expect(result).toEqual({ ok: true, events: [] })
   })
 })

@@ -120,10 +120,10 @@ describe('syncCalendars — DB fetch error', () => {
 describe('syncCalendars — successful single user google_calendar', () => {
   it('upserts events returned by fetchUpcomingEvents', async () => {
     setupIntegrationsQuery([makeConnection('user-1', 'google_calendar')])
-    mockFetchUpcomingEvents.mockResolvedValueOnce([
-      makeCalendarEvent(),
-      makeCalendarEvent({ eventId: 'evt-2' }),
-    ])
+    mockFetchUpcomingEvents.mockResolvedValueOnce({
+      ok: true,
+      events: [makeCalendarEvent(), makeCalendarEvent({ eventId: 'evt-2' })],
+    })
 
     const result = await syncCalendars()
 
@@ -135,7 +135,7 @@ describe('syncCalendars — successful single user google_calendar', () => {
 
   it('maps outlook integration provider to outlook_calendar CalendarProvider', async () => {
     setupIntegrationsQuery([makeConnection('user-1', 'outlook')])
-    mockFetchUpcomingEvents.mockResolvedValueOnce([makeCalendarEvent()])
+    mockFetchUpcomingEvents.mockResolvedValueOnce({ ok: true, events: [makeCalendarEvent()] })
 
     await syncCalendars()
 
@@ -144,7 +144,7 @@ describe('syncCalendars — successful single user google_calendar', () => {
 
   it('stores events with provider="outlook_calendar" when outlook integration is used', async () => {
     setupIntegrationsQuery([makeConnection('user-1', 'outlook')])
-    mockFetchUpcomingEvents.mockResolvedValueOnce([makeCalendarEvent()])
+    mockFetchUpcomingEvents.mockResolvedValueOnce({ ok: true, events: [makeCalendarEvent()] })
 
     await syncCalendars()
 
@@ -152,9 +152,9 @@ describe('syncCalendars — successful single user google_calendar', () => {
     expect(upsertRows[0].provider).toBe('outlook_calendar')
   })
 
-  it('does not call upsert when fetchUpcomingEvents returns []', async () => {
+  it('does not call upsert when fetchUpcomingEvents returns no events', async () => {
     setupIntegrationsQuery([makeConnection('user-1', 'google_calendar')])
-    mockFetchUpcomingEvents.mockResolvedValueOnce([])
+    mockFetchUpcomingEvents.mockResolvedValueOnce({ ok: true, events: [] })
 
     const result = await syncCalendars()
 
@@ -172,8 +172,8 @@ describe('syncCalendars — fault isolation', () => {
 
     // user-bad: fetch succeeds, upsert fails
     mockFetchUpcomingEvents
-      .mockResolvedValueOnce([makeCalendarEvent()])
-      .mockResolvedValueOnce([makeCalendarEvent({ eventId: 'evt-good' })])
+      .mockResolvedValueOnce({ ok: true, events: [makeCalendarEvent()] })
+      .mockResolvedValueOnce({ ok: true, events: [makeCalendarEvent({ eventId: 'evt-good' })] })
 
     mockUpsert
       .mockResolvedValueOnce({ error: { message: 'constraint violation' } })
@@ -195,7 +195,7 @@ describe('syncCalendars — fault isolation', () => {
 
     mockFetchUpcomingEvents
       .mockRejectedValueOnce(new Error('Unexpected provider error'))
-      .mockResolvedValueOnce([makeCalendarEvent()])
+      .mockResolvedValueOnce({ ok: true, events: [makeCalendarEvent()] })
 
     const result = await syncCalendars()
 
@@ -211,8 +211,8 @@ describe('syncCalendars — fault isolation', () => {
     ])
 
     mockFetchUpcomingEvents
-      .mockResolvedValueOnce([makeCalendarEvent()])
-      .mockResolvedValueOnce([makeCalendarEvent({ eventId: 'outlook-evt-1' })])
+      .mockResolvedValueOnce({ ok: true, events: [makeCalendarEvent()] })
+      .mockResolvedValueOnce({ ok: true, events: [makeCalendarEvent({ eventId: 'outlook-evt-1' })] })
 
     const result = await syncCalendars()
 
@@ -225,7 +225,7 @@ describe('syncCalendars — fault isolation', () => {
 describe('syncCalendars — cancelled event deletion', () => {
   it('deletes stale rows after upserting (cancelled event cleanup)', async () => {
     setupIntegrationsQuery([makeConnection('user-1', 'google_calendar')])
-    mockFetchUpcomingEvents.mockResolvedValueOnce([makeCalendarEvent()])
+    mockFetchUpcomingEvents.mockResolvedValueOnce({ ok: true, events: [makeCalendarEvent()] })
 
     await syncCalendars()
 
@@ -235,14 +235,27 @@ describe('syncCalendars — cancelled event deletion', () => {
     expect(mockEqProviderDelete).toHaveBeenCalledWith('provider', 'google_calendar')
   })
 
-  it('still runs deletion even when provider returns 0 events (all cancelled)', async () => {
+  it('runs deletion on a successful fetch that returns 0 events (all cancelled)', async () => {
     setupIntegrationsQuery([makeConnection('user-1', 'google_calendar')])
-    mockFetchUpcomingEvents.mockResolvedValueOnce([])
+    mockFetchUpcomingEvents.mockResolvedValueOnce({ ok: true, events: [] })
 
     await syncCalendars()
 
-    // No upsert, but deletion should still fire to clean up any previously synced rows
+    // Confirmed-empty calendar: no upsert, but deletion fires to clean up stale rows
     expect(mockUpsert).not.toHaveBeenCalled()
     expect(mockDelete).toHaveBeenCalledOnce()
+  })
+
+  it('does NOT delete cached events when the fetch fails (ok:false)', async () => {
+    // Regression: a transient token/provider/parse failure returns ok:false with
+    // events:[]. Running the stale-delete then would wipe the user's entire cached
+    // calendar. The reconcile-delete must be gated on a successful fetch.
+    setupIntegrationsQuery([makeConnection('user-1', 'google_calendar')])
+    mockFetchUpcomingEvents.mockResolvedValueOnce({ ok: false, events: [] })
+
+    await syncCalendars()
+
+    expect(mockUpsert).not.toHaveBeenCalled()
+    expect(mockDelete).not.toHaveBeenCalled()
   })
 })

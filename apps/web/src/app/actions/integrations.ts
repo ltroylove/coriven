@@ -16,8 +16,11 @@
  * The `integrations` table records only connection references (nango_connection_id, scopes,
  * connected_at) for UI state.
  *
- * Connection ID convention: Supabase user UUID is used as the Nango connectionId,
- * ensuring exactly one connection per user per provider in Nango.
+ * Connection identity: the Connect Session flow binds each connection to the
+ * authenticated user via `end_user.id = user.id` at session-creation time. Nango
+ * mints its own connection ID (NOT the user UUID). We derive the authoritative
+ * connection ID server-side by listing connections filtered to the user's
+ * `end_user.id`, so a client can never register another user's connection.
  */
 
 import { revalidatePath } from 'next/cache'
@@ -131,8 +134,11 @@ export async function createConnectSession(
  * Records a successfully completed OAuth connection in the `integrations` table.
  * Called by the client after the Nango frontend SDK reports a successful auth.
  *
- * The nangoConnectionId MUST match the authenticated user's Supabase ID;
- * if it doesn't, the write is rejected — preventing cross-user connection hijacking.
+ * The client-reported connection ID is treated only as a hint. The authoritative
+ * connection ID is resolved server-side by asking Nango for the connections bound
+ * to this user's `end_user.id` (set in createConnectSession) for this provider.
+ * This prevents a client from registering a connection it doesn't own: Nango only
+ * returns connections associated with the authenticated user's end_user.id.
  */
 export async function recordConnection(
   provider: string,
@@ -149,16 +155,42 @@ export async function recordConnection(
     return { error: 'Unauthorized' }
   }
 
-  // Enforce connection ID convention: connectionId must equal the user's own ID.
-  if (nangoConnectionId !== user.id) {
+  // Resolve the authoritative connection ID from Nango, scoped to this user's
+  // end_user.id. Never trust the client-supplied ID as the source of truth.
+  let connectionId: string
+  try {
+    const nango = getNangoClient()
+    const { connections } = await nango.listConnections({
+      userId: user.id,
+      integrationId: PROVIDER_CONFIG_KEYS[provider],
+    })
+
+    if (!connections || connections.length === 0) {
+      console.error(
+        JSON.stringify({
+          event: 'integrations.recordConnection.no_connection_found',
+          userId: user.id,
+          provider,
+        }),
+      )
+      return { error: 'No connection found. Please try connecting again.' }
+    }
+
+    // Prefer the connection the client reported (defense: it must be present in
+    // the user-scoped list); otherwise fall back to the sole connection for this
+    // user + provider.
+    const match = connections.find((c) => c.connection_id === nangoConnectionId)
+    connectionId = match?.connection_id ?? connections[0].connection_id
+  } catch (err) {
     console.error(
       JSON.stringify({
-        event: 'integrations.recordConnection.id_mismatch',
+        event: 'integrations.recordConnection.nango_lookup_error',
+        provider,
         userId: user.id,
-        nangoConnectionId,
+        error: String(err),
       }),
     )
-    return { error: 'Connection ID mismatch' }
+    return { error: 'Failed to verify connection. Please try again.' }
   }
 
   try {
@@ -167,7 +199,7 @@ export async function recordConnection(
       {
         user_id: user.id,
         provider,
-        nango_connection_id: nangoConnectionId,
+        nango_connection_id: connectionId,
         scopes: PROVIDER_SCOPES[provider],
         connected_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -236,10 +268,26 @@ export async function disconnectProvider(
     return { error: 'Unauthorized' }
   }
 
-  // Step 1: Delete from Nango first.
+  const supabase = await createAuthServerClient()
+
+  // Look up the stored connection ID (Nango-generated, not the user UUID).
+  const { data: row } = await supabase
+    .from('integrations')
+    .select('nango_connection_id')
+    .eq('user_id', user.id)
+    .eq('provider', provider)
+    .maybeSingle()
+
+  // No row: nothing to disconnect — treat as success (idempotent).
+  if (!row) {
+    revalidatePath('/settings/integrations')
+    return {}
+  }
+
+  // Step 1: Delete from Nango first, using the stored connection ID.
   try {
     const nango = getNangoClient()
-    await nango.deleteConnection(PROVIDER_CONFIG_KEYS[provider], user.id)
+    await nango.deleteConnection(PROVIDER_CONFIG_KEYS[provider], row.nango_connection_id)
   } catch (err) {
     const errStr = String(err)
     // 404 / not-found: connection was already gone in Nango — proceed to DB cleanup.
@@ -274,7 +322,6 @@ export async function disconnectProvider(
 
   // Step 2: Remove the DB row.
   try {
-    const supabase = await createAuthServerClient()
     const { error } = await supabase
       .from('integrations')
       .delete()

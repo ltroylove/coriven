@@ -59,9 +59,11 @@ async function fetchGmailHeaders(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}`,
     )
     metaUrl.searchParams.set('format', 'METADATA')
-    metaUrl.searchParams.set('metadataHeaders', 'From')
-    metaUrl.searchParams.set('metadataHeaders', 'Subject')
-    metaUrl.searchParams.set('metadataHeaders', 'Date')
+    // metadataHeaders is a repeated query param — append (not set) each one,
+    // otherwise only the last value survives and Gmail omits From/Subject.
+    metaUrl.searchParams.append('metadataHeaders', 'From')
+    metaUrl.searchParams.append('metadataHeaders', 'Subject')
+    metaUrl.searchParams.append('metadataHeaders', 'Date')
 
     const metaResp = await fetch(metaUrl.toString(), {
       headers: { Authorization: `Bearer ${token}` },

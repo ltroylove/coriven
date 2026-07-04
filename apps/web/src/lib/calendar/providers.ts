@@ -26,6 +26,17 @@
 import { getProviderToken } from '@/lib/integrations/nango'
 import type { CalendarEvent, CalendarAttendee, CalendarProvider } from '@personal-assistant/types'
 
+/**
+ * Result of a calendar fetch. `ok` distinguishes a genuine "no events in window"
+ * (ok: true, events: []) from a failure (ok: false) — token missing, provider
+ * API error, network error, or parse error. Callers MUST NOT treat an ok:false
+ * empty result as "the calendar is empty" (e.g. never reconcile-delete on it).
+ */
+export interface FetchEventsResult {
+  ok: boolean
+  events: CalendarEvent[]
+}
+
 // ---------------------------------------------------------------------------
 // Sync window constant
 // ---------------------------------------------------------------------------
@@ -107,11 +118,11 @@ export function normalizeGoogleEvent(raw: GoogleCalendarEvent): CalendarEvent {
   }
 }
 
-async function fetchGoogleCalendarEvents(userId: string): Promise<CalendarEvent[]> {
+async function fetchGoogleCalendarEvents(userId: string): Promise<FetchEventsResult> {
   const token = await getProviderToken(userId, 'google_calendar')
   if (!token) {
     // Not connected or token retrieval failed — skip silently (already logged in getProviderToken)
-    return []
+    return { ok: false, events: [] }
   }
 
   const { timeMin, timeMax } = getSyncWindow()
@@ -138,7 +149,7 @@ async function fetchGoogleCalendarEvents(userId: string): Promise<CalendarEvent[
         error: err instanceof Error ? err.message : String(err),
       }),
     )
-    return []
+    return { ok: false, events: [] }
   }
 
   if (!response.ok) {
@@ -149,7 +160,7 @@ async function fetchGoogleCalendarEvents(userId: string): Promise<CalendarEvent[
         status: response.status,
       }),
     )
-    return []
+    return { ok: false, events: [] }
   }
 
   let body: GoogleCalendarListResponse
@@ -163,10 +174,10 @@ async function fetchGoogleCalendarEvents(userId: string): Promise<CalendarEvent[
         error: err instanceof Error ? err.message : String(err),
       }),
     )
-    return []
+    return { ok: false, events: [] }
   }
 
-  return (body.items ?? []).map(normalizeGoogleEvent)
+  return { ok: true, events: (body.items ?? []).map(normalizeGoogleEvent) }
 }
 
 // ---------------------------------------------------------------------------
@@ -231,11 +242,11 @@ export function normalizeOutlookEvent(raw: GraphCalendarEvent): CalendarEvent {
   }
 }
 
-async function fetchOutlookCalendarEvents(userId: string): Promise<CalendarEvent[]> {
+async function fetchOutlookCalendarEvents(userId: string): Promise<FetchEventsResult> {
   // Outlook Calendar piggybacks on the 'outlook' Nango connection (see module header).
   const token = await getProviderToken(userId, 'outlook')
   if (!token) {
-    return []
+    return { ok: false, events: [] }
   }
 
   const { timeMin, timeMax } = getSyncWindow()
@@ -261,7 +272,7 @@ async function fetchOutlookCalendarEvents(userId: string): Promise<CalendarEvent
         error: err instanceof Error ? err.message : String(err),
       }),
     )
-    return []
+    return { ok: false, events: [] }
   }
 
   if (!response.ok) {
@@ -272,7 +283,7 @@ async function fetchOutlookCalendarEvents(userId: string): Promise<CalendarEvent
         status: response.status,
       }),
     )
-    return []
+    return { ok: false, events: [] }
   }
 
   let body: GraphCalendarListResponse
@@ -286,10 +297,10 @@ async function fetchOutlookCalendarEvents(userId: string): Promise<CalendarEvent
         error: err instanceof Error ? err.message : String(err),
       }),
     )
-    return []
+    return { ok: false, events: [] }
   }
 
-  return (body.value ?? []).map(normalizeOutlookEvent)
+  return { ok: true, events: (body.value ?? []).map(normalizeOutlookEvent) }
 }
 
 // ---------------------------------------------------------------------------
@@ -300,14 +311,16 @@ async function fetchOutlookCalendarEvents(userId: string): Promise<CalendarEvent
  * Fetches upcoming calendar events for a user from the given provider.
  * Window: now → +14 days.
  *
- * Returns [] on any error (token missing, provider API failure, parse failure).
- * Errors are logged server-side; the caller never receives a thrown exception
- * from this function — fault isolation is enforced here, not in the caller.
+ * Returns { ok, events }. `ok` is false on any failure (token missing, provider
+ * API failure, network error, parse failure) — the caller MUST check `ok` before
+ * treating an empty `events` list as authoritative (e.g. before deleting cached
+ * rows). Errors are logged server-side; this function never throws — fault
+ * isolation is enforced here, not in the caller.
  */
 export async function fetchUpcomingEvents(
   userId: string,
   provider: CalendarProvider,
-): Promise<CalendarEvent[]> {
+): Promise<FetchEventsResult> {
   if (provider === 'google_calendar') {
     return fetchGoogleCalendarEvents(userId)
   }
@@ -318,5 +331,5 @@ export async function fetchUpcomingEvents(
   console.error(
     JSON.stringify({ event: 'calendar.unknown_provider', userId, provider }),
   )
-  return []
+  return { ok: false, events: [] }
 }
