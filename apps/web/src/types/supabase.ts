@@ -754,6 +754,50 @@ export type Database = {
           }
         ]
       }
+      meeting_briefs: {
+        Row: {
+          id: string
+          user_id: string
+          event_id: string
+          provider: string
+          event_title: string | null
+          event_start: string
+          content: Json
+          delivered_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          event_id: string
+          provider: string
+          event_title?: string | null
+          event_start: string
+          content: Json
+          delivered_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          event_id?: string
+          provider?: string
+          event_title?: string | null
+          event_start?: string
+          content?: Json
+          delivered_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_briefs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       email_metadata: {
         Row: {
           id: string
