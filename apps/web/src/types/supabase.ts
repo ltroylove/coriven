@@ -701,6 +701,62 @@ export type Database = {
           }
         ]
       }
+      email_metadata: {
+        Row: {
+          id: string
+          user_id: string
+          provider: string
+          message_id: string
+          thread_id: string | null
+          from_address: string | null
+          subject: string | null
+          received_at: string | null
+          urgency: Database["public"]["Enums"]["email_urgency"]
+          category: Database["public"]["Enums"]["email_category"] | null
+          ai_summary: string | null
+          is_read: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: string
+          message_id: string
+          thread_id?: string | null
+          from_address?: string | null
+          subject?: string | null
+          received_at?: string | null
+          urgency?: Database["public"]["Enums"]["email_urgency"]
+          category?: Database["public"]["Enums"]["email_category"] | null
+          ai_summary?: string | null
+          is_read?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: string
+          message_id?: string
+          thread_id?: string | null
+          from_address?: string | null
+          subject?: string | null
+          received_at?: string | null
+          urgency?: Database["public"]["Enums"]["email_urgency"]
+          category?: Database["public"]["Enums"]["email_category"] | null
+          ai_summary?: string | null
+          is_read?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_metadata_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       tool_permissions: {
         Row: {
           enabled: boolean
@@ -769,6 +825,8 @@ export type Database = {
       }
     }
     Enums: {
+      email_urgency: "critical" | "high" | "normal" | "low"
+      email_category: "important" | "action_required" | "informational" | "promotional" | "spam"
       integration_provider: "gmail" | "outlook" | "google_calendar" | "outlook_calendar"
       entity_profile_type: "person" | "place" | "project" | "thing" | "resource"
       goal_confidence: "high" | "medium" | "low"
@@ -914,6 +972,8 @@ export const Constants = {
   },
   public: {
     Enums: {
+      email_urgency: ["critical", "high", "normal", "low"],
+      email_category: ["important", "action_required", "informational", "promotional", "spam"],
       entity_profile_type: ["person", "place", "project", "thing", "resource"],
       goal_confidence: ["high", "medium", "low"],
       goal_momentum: ["improving", "stable", "declining"],

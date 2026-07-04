@@ -25,6 +25,7 @@ const TOOL_LABELS: Record<ToolName, { label: string; description: string }> = {
   create_project: { label: 'Create projects', description: 'Add new projects linked to your goals' },
   generate_daily_briefing: { label: 'Generate daily briefing', description: 'Assemble a daily briefing package from your goals and tasks' },
   submit_for_approval: { label: 'Submit for approval', description: 'Propose external actions (email, calendar) for your review before anything executes' },
+  get_email_thread: { label: 'Read email thread', description: 'Fetch the full content of a specific email message on demand — never stored' },
 }
 
 type Permission = { tool_name: ToolName; enabled: boolean }
