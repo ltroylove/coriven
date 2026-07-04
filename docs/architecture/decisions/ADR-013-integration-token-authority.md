@@ -1,140 +1,120 @@
-# ADR-013: Integration Platform Architecture — Nango + Direct APIs + Zapier Embed
+# ADR-013: Integration Platform Architecture — Nango + Direct Provider APIs
 
 **Status:** Accepted  
-**Date:** 2026-07-02  
+**Date:** 2026-07-02 (revised 2026-07-04 after external research validation)  
 **Deciders:** Roy Love  
-**Supersedes:** Initial draft (n8n as write-path worker, Coriven as custom token authority)
+**Supersedes:** v1 draft (n8n as write-path worker), v2 draft (Zapier Embed as long-tail layer)
 
 ---
 
 ## Context
 
-Coriven's vision is to connect as much of a user's life as possible — not just email and calendar, but fitness trackers, banking, smart home, Slack, Notion, and whatever each individual user's life runs on. This is fundamentally an integration platform problem, not just an email reader problem.
-
-The initial approach (Coriven as a custom OAuth token authority, n8n as the write-path worker) was designed around email/calendar only and has three problems at product scale:
-
-1. **n8n is single-tenant by design.** One n8n instance per user is operationally nightmarish; n8n Embed is enterprise-priced ($1k+/mo custom contract). It cannot serve as the foundation for a multi-user product.
-2. **Custom token management doesn't scale across providers.** Building and maintaining OAuth flows, token refresh, and scope management for every provider Coriven supports is unbounded ongoing engineering work.
-3. **The approval queue needs a multi-tenant execution layer.** Approved actions need to execute against the right user's credentials, across any provider, without cross-user token leakage.
-
-Two categories of integrations exist with different access patterns:
+Coriven's vision is to connect as much of a user's life as possible — email, calendar, and eventually fitness trackers, banking, smart home, Slack, Notion, and whatever each user's life runs on. Two categories of integrations exist with different access patterns:
 
 - **Deep integrations** (Gmail, Outlook, Google Calendar) — Coriven reads these continuously (15-min poll), queries them on demand for meeting prep and triage, and writes back via approved actions. Direct API access is required for query flexibility.
-- **Long-tail integrations** (fitness, banking, smart home, Slack, Notion, Airtable, HubSpot, and anything else a user's life touches) — Coriven triggers actions and receives events but doesn't need complex query access. A workflow/trigger model covers the need.
+- **Long-tail integrations** (everything else) — Coriven triggers actions and receives events but doesn't need complex query access.
+
+Earlier drafts of this ADR proposed n8n (v1) and then Zapier Embed (v2) as the long-tail execution layer. External research (2026-07-03, three parallel research reports) invalidated both and validated the rest of the architecture:
+
+1. **n8n is single-tenant by design** — one instance per user doesn't scale; n8n Embed is enterprise-priced (~$50K/yr).
+2. **Zapier Embed shifts cost to the user** — every end user needs their own Zapier account; the free tier caps at 100 tasks/month with two-step Zaps, so an active Coriven user would need a paid Zapier plan (~$20+/mo) on top of Coriven's $12–22/mo subscription. There is no partner-absorbs-cost mode. This kills conversion for a consumer product.
+3. **The consumer-viable alternatives carry fresh risk** — Composio (purpose-built for AI-agent actions, ~$0.30/1K actions) suffered a May 2026 breach leaking OAuth tokens including Gmail tokens; Pipedream Connect was acquired by Workday, creating roadmap risk for consumer use cases.
+4. **The market converged on MCP-shaped tool calling** as the substrate for "AI executes actions in a user's apps" (Zapier MCP, Composio MCP, Pipedream MCP) — meaning a well-abstracted action interface makes the eventual vendor swappable.
 
 ---
 
 ## Decision
 
-**Three-layer integration architecture:**
+**Two layers now; long-tail connectors deferred to a dedicated post-validation epic.**
 
-### Layer 1 — Nango (OAuth authority for all providers)
-[Nango](https://www.nango.dev/) is an open-source, multi-tenant OAuth and API credential management platform. It handles the "connect your account" flow for 200+ providers and manages token storage, refresh, and rotation natively. Coriven never stores raw OAuth tokens — Nango owns that layer.
+### Layer 1 — Nango (OAuth authority, self-hosted)
+[Nango](https://www.nango.dev/) is a source-available (Elastic License 2.0), multi-tenant OAuth and API credential management platform. It handles the "connect your account" flow and manages token storage, refresh, and rotation. Coriven never stores raw OAuth tokens.
 
-- All provider OAuth flows (Google, Microsoft, Slack, GitHub, Fitbit, Plaid, etc.) run through Nango.
-- Nango is self-hosted (or Nango Cloud) and is multi-tenant from day one — each Coriven user has isolated credentials within the same Nango instance.
-- Coriven calls Nango's server-side SDK (`nango.getToken(providerConfigKey, connectionId)`) to get a fresh access token whenever it needs to call a provider API. Nango handles refresh transparently.
-- The `integrations` table in Coriven's DB stores `nango_connection_id` and `provider` per user — no raw tokens, no encryption key to manage.
+- All provider OAuth flows run through self-hosted Nango. Our usage (Auth + `getToken()`) falls within the free self-hosted tier — syncs/functions/webhooks are the paid features we don't use.
+- Coriven's `integrations` table stores `nango_connection_id` and `provider` per user — no raw tokens, no `DATA_ENCRYPTION_KEY` to manage.
+- Server-side code calls `nango.getToken(providerConfigKey, connectionId)` per request; Nango handles refresh transparently.
+- Self-hosting (vs. Nango Cloud) is deliberate: it keeps the Gmail data path inside our own Google CASA assessment boundary, avoids Google's rejection of `api.nango.dev` callback URLs, and avoids ~$1/connection/month Cloud pricing (~$3/user/mo at 3 connections).
 
-### Layer 2 — Direct API calls (deep integrations: Gmail, Outlook, Google Calendar)
-For providers Coriven queries deeply and continuously, it calls provider APIs directly using tokens retrieved from Nango:
+### Layer 2 — Direct provider API calls (Gmail, Outlook, Google Calendar)
+- **Read path:** Vercel Cron → `nango.getToken()` → provider API → metadata stored in `email_metadata` / `calendar_events`. Bodies fetched on demand only.
+- **Write path (approved actions):** approval queue → `nango.getToken()` → provider API → `audit_log`.
 
-- **Read path:** Vercel Cron calls provider API → stores metadata in `email_metadata` / `calendar_events`. Bodies fetched on demand only.
-- **Write path (approved actions):** Coriven server action fetches token from Nango → calls provider API directly → logs to `audit_log`.
-- Providers in scope for direct integration: Gmail, Microsoft Graph (Outlook + Outlook Calendar), Google Calendar.
+### Layer 3 — Long-tail connectors: DEFERRED (not in Epic 5)
+Cut from Epic 5 entirely. Ship email/calendar only for the validation phase; decide the long-tail layer as its own epic after real user feedback shows which apps people actually want. Constraints recorded now for that future epic:
 
-### Layer 3 — Zapier Embed (long-tail connectors)
-For everything else a user's life runs on, [Zapier Embed](https://zapier.com/l/embed) provides a white-labeled "connect your apps" UI and 6,000+ app connectors baked into Coriven's settings page. When an approved action targets a long-tail provider, Coriven fires a Zapier webhook; Zapier executes the action using the user's connected credentials (which Zapier manages).
+- **Design the action layer against an MCP-shaped internal interface** so the vendor is swappable — the entire market (Zapier, Composio, Pipedream, Paragon) has converged on MCP.
+- **Candidate vendors:** Composio (best pricing fit, purpose-built for AI agents — require post-incident security attestations after their May 2026 breach before connecting anything) and Pipedream Connect (confirm per-end-user pricing and Workday roadmap commitment). Zapier Embed is ruled out as a primary layer (user-pays economics) but may return as an optional bring-your-own power-user add-on.
+- **Banking goes through a dedicated aggregator (Plaid/Teller) regardless** — never through a general-purpose iPaaS.
+- The approval queue's execution router (Epic 5, Feature 5.3) should keep a clean provider-routing seam so the long-tail path can be added without rework.
 
-- Users connect long-tail apps inside Coriven's UI via Zapier Embed — no separate Zapier account required.
-- Coriven's approval queue fires a typed webhook payload to Zapier on approval.
-- Zapier's consumption-based per-user pricing maps cleanly to Coriven's subscription tiers.
-- Coriven does not store credentials for long-tail providers — Zapier owns that.
-
-**Architecture summary:**
+**Architecture summary (Epic 5 scope):**
 
 ```
-User connects provider
+User connects provider (Gmail / Outlook / Google Calendar)
         │
         ▼
-   Nango OAuth flow (all providers)
+   Self-hosted Nango OAuth flow
         │
-        ├── Deep providers (Gmail, Outlook, Calendar)
-        │       │
-        │       ├── Read path: Coriven cron → Nango.getToken() → provider API → DB
-        │       └── Write path: approved action → Nango.getToken() → provider API → audit_log
-        │
-        └── Long-tail providers (everything else)
-                │
-                └── Approved action → Zapier webhook → Zapier executes → audit_log
+        ├── Read path: Coriven cron → nango.getToken() → provider API → DB (metadata only)
+        └── Write path: approval queue → nango.getToken() → provider API → audit_log
 ```
-
-**Data flow for an approved action:**
-
-1. Claude drafts action → `submit_for_approval` → lands in `approval_queue`
-2. User reviews at `/approvals` → approves
-3. Coriven reads `approval_queue.action_type` + `provider`
-4. If deep provider: fetch token from Nango → call provider API directly
-5. If long-tail provider: POST typed webhook to Zapier Embed endpoint → Zapier executes
-6. Both paths write result to `audit_log`; `approval_queue.status` → `executed`
 
 ---
 
 ## Security Constraints
 
-### Nango
-- Self-hosted Nango is preferred for Phase 4 validation — Coriven controls the token store.
-- Nango Cloud is acceptable for early validation but review their data residency and encryption guarantees before productization.
-- `nango_connection_id` values in Coriven's DB are not sensitive on their own — they only resolve to tokens within Nango's authenticated API. Treat them as opaque identifiers, not secrets.
-- Nango enforces per-connection isolation — one user's token cannot be retrieved with another user's `connectionId`.
+Validated and extended by external security research (2026-07-03). The 2025 incident record — **ShadowLeak** (zero-click Gmail exfiltration via ChatGPT's agent, hidden instructions in email HTML) and **EchoLeak** (CVE-2025-32711, same pattern against Microsoft 365 Copilot, bypassed their dedicated injection classifier) — is precisely Coriven's threat model and confirms that detection alone fails. The effective defense is restricting what the agent can do: capability restriction + egress control + human approval. RFC 9700 (OAuth 2.0 Security BCP, Jan 2025) is the normative reference for token handling.
 
-### OAuth scopes
-- Request minimum scopes per provider at connection time:
-  - Gmail read: `gmail.readonly` — write: `gmail.send`
-  - Google Calendar read: `calendar.readonly` — write: `calendar.events`
-  - Microsoft Graph: equivalent minimum scopes per operation
-- Scope selection surfaced to the user at connection time in `/settings/integrations`.
+### Nango deployment
+- Self-hosted with **external Postgres + Redis** (bundled containers use transient storage — not production-safe). Use a separate database, not co-mingled with Coriven's Supabase.
+- **The Nango encryption key cannot be rotated after first deploy** — vault it before setup; the compromise-response plan is "revoke and re-auth all users," documented as a runbook.
+- Get written confirmation from Nango that Auth-only self-hosted commercial production use is permitted under ELv2; record the answer in this ADR.
+- No webhooks on free self-hosted — poll connection status and handle `getToken()` failures gracefully.
+- Network-isolate the Nango instance; only Coriven's server-side code can reach it.
 
-### Zapier Embed
-- Zapier webhook URLs are authenticated (`X-Webhook-Secret` header, constant-time comparison).
-- Webhook payloads contain only the action parameters (recipient, subject, body, etc.) — never raw tokens or PII beyond what the action requires.
-- Zapier manages credentials for long-tail providers; Coriven has no visibility into those tokens.
+### OAuth scopes and provider verification
+- Minimum scopes: Gmail read `gmail.readonly`, write `gmail.send`; Google Calendar `calendar.readonly` / `calendar.events`; Microsoft Graph equivalents.
+- **Google CASA:** restricted Gmail scopes require annual CASA Tier 2 assessment (~$1–5K/yr recurring, 2–6 months first pass) — **exempt under 100 Gmail accounts**, so the validation phase ships without it. Budget it for productization and start verification early.
+- **Consider launching `gmail.readonly` before `gmail.send`** — smaller injection blast radius during the pilot; each restricted scope is in-scope for the same CASA anyway.
+- **Microsoft:** free publisher verification (requires Microsoft AI Cloud Partner Program + domain validation) — get it early; it gates consent in most Entra tenants. No CASA equivalent. Avoid features editing delivered mail (new `Mail-Advanced.ReadWrite` admin-consent wall from Dec 2026).
+
+### Approval queue hardening (binding on Epic 5 Feature 5.3)
+- **The approval UI must show raw action payloads** — exact recipient, subject, full body, URLs — never only an LLM-generated summary. The summary is model output and can itself be injection-influenced ("approved on false pretenses" hole).
+- **Egress allowlist:** strip or neutralize URLs and images in model output rendered to users or sent externally unless allowlisted — both 2025 incidents exfiltrated via URLs/auto-fetched resources, not via "actions."
+- Three-tier action model (industry norm): auto-allow safe reads → notify on recoverable actions → block-until-approved for irreversible/external side effects. Tier to avoid approval fatigue — gate external writes, not reads.
+- Execution-time constraint check (Epic 3 gate) **fails closed** for external actions.
 
 ### Prompt injection
-- Email bodies, calendar descriptions, and any content fetched from external providers are untrusted. Never passed to Claude as instructions — only as sandboxed summarization input with an explicit hostile-content framing in the system prompt (§9.3 of the blueprint).
-- Triage processes metadata only. Body content fetched on demand with the hostile-content frame applied before any Claude call.
+- All external content (email bodies, calendar descriptions, API responses) is untrusted — summarization input only, never instructions, with explicit hostile-content framing (blueprint §9.3).
+- The "lethal trifecta" model (private data access + untrusted content + external communication) is broken at the third leg by the approval queue — this is the single strongest control and must never be bypassed.
+- Medium-term: provenance separation (structurally tag email-derived content; restrict tool calls after untrusted ingestion — lightweight plan-then-execute). Pilot on the summarization path first.
 
 ### Audit trail
-- Every approved action execution (regardless of path) writes to `audit_log` with: `user_id`, `provider`, `action_type`, `approved_at`, `executed_at`, `status`, `error_code` (no token values, no raw response bodies).
+- `audit_log` is append-only, service-role writes only. Every execution records: `user_id`, `provider`, `action_type`, `approval_id`, `status`, `error_code`, timestamps — no token values, no raw response bodies.
+- Record the delegation chain (user → Coriven → provider connection) per action — the shape all emerging IETF agent-auth drafts assume.
 
 ---
 
 ## Consequences
 
 **Positive:**
-- Multi-tenant from day one — Nango handles per-user credential isolation natively.
-- No raw OAuth tokens in Coriven's database — eliminates the `DATA_ENCRYPTION_KEY` single-point-of-failure.
-- 6,000+ long-tail connectors via Zapier Embed without writing integration code.
-- Direct API access for deep integrations preserves query flexibility (complex filters, on-demand fetches, 15-min polling).
-- Coriven's subscription pricing can incorporate Zapier's per-user consumption cost cleanly.
-- Clear ownership boundaries: Nango owns OAuth, Zapier owns long-tail execution, Coriven owns the approval UI and audit trail.
+- Multi-tenant from day one; no raw tokens in Coriven's DB; no encryption key of our own to manage.
+- Epic 5 scope shrinks — email/calendar validation ships sooner without long-tail connector work.
+- Long-tail vendor decision is made later with real usage data (which apps users actually want) and Composio's post-incident track record visible.
+- Self-hosted Nango simplifies Google CASA and avoids per-connection Cloud fees.
+- The approval queue is validated by the 2025 incident record as the industry-standard defense.
 
 **Negative:**
-- Three external dependencies in the integration layer (Nango, provider APIs, Zapier) vs. one (n8n).
-- Zapier Embed pricing needs validation — per-user task consumption at scale needs to fit the subscription tier margins.
-- Self-hosted Nango adds an infrastructure component to operate alongside Coriven and Supabase.
-- Long-tail actions are less observable than direct API calls — Zapier's execution logs are in Zapier, not Coriven's `audit_log` (mitigated by Zapier's webhook response payload confirming execution).
+- "Connect all of life" is deferred — Epic 5 delivers email/calendar only.
+- Self-hosted Nango adds an infrastructure component (Nango + external Postgres + Redis) to operate.
+- Nango is a seed-stage company under a source-available license whose free self-hosted tier has been narrowing — mitigated because our blast radius is small: tokens live in our own Postgres, and the `getToken()` wrapper is a thin interface swappable for self-rolled refresh logic (Arctic et al.). Re-check the free tier's scope every ~6 months.
+- CASA is an unavoidable recurring cost once Gmail access exceeds 100 users — now in the productization budget.
 
 ---
 
-## Open Questions for Epic 5 Design
-
-1. **Nango self-hosted vs. Nango Cloud for validation phase** — self-hosted adds ops overhead but keeps tokens on controlled infrastructure. Decide before Epic 5 implementation starts.
-2. **Zapier Embed pricing tiers** — confirm per-task cost fits within Coriven's subscription margins at projected user volume.
-3. **Fallback for Zapier outages** — approved actions that fail Zapier execution need a retry/notification path. Queue the action for manual retry or surface in `/approvals` as failed.
-
----
+## Research Provenance
+Three parallel research reports (2026-07-03): Nango viability/security, embedded-iPaaS landscape and consumer pricing, OAuth/AI-agent security best practices. Key sources: RFC 9700; Google restricted-scope verification docs; EchoLeak (CVE-2025-32711) and ShadowLeak disclosures; Google's layered-defense guidance (June 2025); Zapier/Composio/Pipedream pricing pages; Nango docs and repo; Composio May 2026 incident disclosure.
 
 ## Related
 - ADR-009: Approval Queue Audit Gate (defines the approved-action flow)
-- Blueprint §11 (Communications Intelligence), §17.4 (Phase 4), §20 (env vars)
+- Blueprint §9 (zero-trust spine), §11 (Communications Intelligence), §17.4 (Phase 4)

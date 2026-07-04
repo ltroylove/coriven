@@ -2,7 +2,7 @@
 preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-07-02"
-lastupdated: "2026-07-02T00:00:00"
+lastupdated: "2026-07-04T00:00:00"
 version: "1.0"
 type: wave
 status: Planning
@@ -247,8 +247,8 @@ Task 4 (verification)
 **For Feature 5.4 (Calendar Intelligence):**
 - Google Calendar connections available through the same flow.
 
-**For Feature 5.5 (Zapier Embed):**
-- The integrations settings page is the established home for all connect/disconnect UI; Zapier Embed extends this page rather than creating a new surface.
+**For future long-tail epic (ADR-013 Layer 3):**
+- The integrations settings page is the established home for all connect/disconnect UI; any future provider connect flows extend this page rather than creating a new surface.
 
 ## Risks and Blockers
 

@@ -2,7 +2,7 @@
 preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-07-02"
-lastupdated: "2026-07-02T00:00:00"
+lastupdated: "2026-07-04T00:00:00"
 version: "1.0"
 type: wave
 status: Planning
@@ -149,6 +149,10 @@ relateddocuments:
 **Acceptance Criteria:**
 - [ ] A manual end-to-end OAuth connect succeeds against at least one provider from the Nango-hosted flow
 - [ ] Provider configs request only the ADR-013 minimum scopes
+- [ ] Nango instance uses **external Postgres + Redis** (bundled containers use transient storage and are not production-safe); these must be separate services, not co-mingled with Coriven's Supabase instance (ADR-013 §Nango deployment)
+- [ ] **Nango encryption key vaulted before first deploy** — it cannot be rotated after setup; the compromise runbook (bulk revoke via provider APIs + re-auth all users) is documented in the repo before the instance goes live (ADR-013 §Nango deployment)
+- [ ] **Written confirmation obtained from Nango** that Auth-only self-hosted commercial production use is permitted under Elastic License 2.0; the answer is recorded in ADR-013 (ADR-013 §Nango deployment)
+- [ ] Nango instance is **network-isolated** — only Coriven's server-side code can reach it; no public admin surface is unauthenticated (ADR-013 §Nango deployment)
 
 ---
 
@@ -256,7 +260,10 @@ Task 1 (Nango deploy + providers)     Task 2 (migration)     Task 3 (shared type
 ### Nango Deployment
 
 - **Hosting:** Self-hosted via Docker on managed container hosting (Railway preferred; Render acceptable). Nango Cloud explicitly out of scope for validation (Epic 5 scope).
-- **Exposure:** HTTPS only. The Nango dashboard/admin surface must not be publicly unauthenticated.
+- **External Postgres + Redis required:** bundled containers use transient storage and are not production-safe. Use separate managed services; do not co-mingle with Coriven's Supabase.
+- **Encryption key:** the Nango encryption key must be vaulted (e.g. in a secrets manager) **before** first deploy — it cannot be rotated after setup. Document the compromise runbook (bulk revoke via provider APIs + re-auth all users) in the repo before the instance goes live.
+- **ELv2 confirmation:** obtain written confirmation from Nango that Auth-only self-hosted commercial production use is permitted under Elastic License 2.0 before the instance processes real user connections. Record the answer in ADR-013.
+- **Exposure:** HTTPS only. The Nango dashboard/admin surface must not be publicly unauthenticated. **Network-isolate the instance** — only Coriven's server-side code should be able to reach it.
 - **Provider configs (in Nango):**
   - Gmail — scopes: `gmail.readonly`, `gmail.send`
   - Microsoft Graph (Outlook mail) — scopes: `Mail.Read`, `Mail.Send`
@@ -296,7 +303,6 @@ Explicitly removed/forbidden: `DATA_ENCRYPTION_KEY` and any `access_token_encryp
 - `ENABLE ROW LEVEL SECURITY`
 - Policy scoping SELECT/INSERT/UPDATE/DELETE to `user_id = auth.uid()`; service-role bypass consistent with existing tables
 
-**Forward note (Feature 5.5):** an `integration_type` column (`nango` vs `zapier`) is planned; not added in this wave.
 
 ### Testing
 
@@ -318,7 +324,6 @@ Explicitly removed/forbidden: `DATA_ENCRYPTION_KEY` and any `access_token_encryp
 
 **For other Features/Epics:**
 - Features 5.2-5.4: the token wrapper is the only sanctioned token path — its error model and signature must be stable before polling/sync work starts.
-- Feature 5.5: `integrations` table is the shared registry; the `integration_type` extension lands there.
 
 ## Risks and Blockers
 

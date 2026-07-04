@@ -2,7 +2,7 @@
 preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-07-02"
-lastupdated: "2026-07-02T00:00:00"
+lastupdated: "2026-07-04T00:00:00"
 version: "1.0"
 type: wave
 status: Planning
@@ -63,7 +63,7 @@ relateddocuments:
 **So that** I can see exactly what the assistant wants to do and why before anything happens
 
 **Acceptance Criteria:**
-- [ ] The approvals page lists all of my pending items, newest first, each showing the action type, provider, a plain-language description, and the key payload fields (e.g. recipient and subject for an email).
+- [ ] The approvals page lists all of my pending items, newest first. Each item displays the **raw action payload** — exact recipient, subject, full body, and URLs — not a summary. An LLM-generated plain-language description may accompany the raw payload but never replaces it: the summary is model output and can be injection-influenced, so approval must be based on what will actually be sent (approval-context integrity; ADR-013 §Security).
 - [ ] Items in terminal states (cancelled, executed, failed) are viewable in a history section, separated from pending items.
 - [ ] I can never see another user's approvals, and unauthenticated visitors are redirected to sign in.
 - [ ] An empty queue shows a clear empty state rather than a blank page.
@@ -97,6 +97,7 @@ relateddocuments:
 
 **Acceptance Criteria:**
 - [ ] Each approval decision (approve, modify-then-approve, cancel) produces an audit entry linked to the approval item, recording user, action type, provider, resulting status, and timestamp.
+- [ ] Each audit entry records the delegation chain — user → Coriven → provider connection — per action, consistent with ADR-013 §Audit Trail and emerging IETF agent-auth conventions.
 - [ ] Audit entries contain no secrets, tokens, or raw external content bodies.
 - [ ] Attempts by user-facing code paths to insert, update, or delete audit entries are refused at the database level; only the privileged server role can append.
 - [ ] The user can read their own audit entries; no one can read another user's.
@@ -160,7 +161,7 @@ relateddocuments:
 - **Priority:** High
 
 **Deliverables:**
-- Validation schemas per action type (`send_email`, `create_event`, `zapier_action` at minimum), shared by tool submission and the approve/modify path
+- Validation schemas per action type (`send_email`, `create_event` at minimum), shared by tool submission and the approve/modify path. Schema is extensible — future long-tail action types (ADR-013 Layer 3) add new schemas without modifying existing ones.
 
 **Acceptance Criteria:**
 - [ ] Unknown action types and malformed payloads are rejected with structured errors
@@ -196,6 +197,7 @@ relateddocuments:
 
 **Acceptance Criteria:**
 - [ ] The module is the only code path that writes audit entries
+- [ ] Each entry records the delegation chain (user → Coriven → provider connection) per action (ADR-013 §Audit Trail)
 - [ ] Entries never include tokens, secrets, or raw response bodies
 - [ ] Structured log emitted per append for observability
 
@@ -227,7 +229,7 @@ relateddocuments:
 - Approvals page with pending list, inline Modify editing, Approve/Cancel actions, history section, empty state, and nav link
 
 **Acceptance Criteria:**
-- [ ] Pending cards show action type, provider, description, and key payload fields at a glance
+- [ ] Pending cards show action type, provider, and the **raw action payload** — exact recipient, subject, full body, and URLs. An LLM-generated description may accompany this display but the raw payload is the primary decision surface (approval-context integrity: the summary is injectable model output)
 - [ ] Modify edits are re-validated with inline error display before approval is allowed
 - [ ] Page is authenticated and matches existing app styling and navigation patterns
 
@@ -293,7 +295,7 @@ Task 1 (schema migration)
 
 **For other Features/Epics:**
 - Feature 5.4: calendar write actions submit through this queue
-- Feature 5.5: `zapier_action` action type and payload shape defined here
+- Future long-tail epic (ADR-013 Layer 3): the action-type schema is extensible; new action types for long-tail providers slot in alongside `send_email` and `create_event` when that epic ships
 - Epic 3: `submit_for_approval` already passes the constraint gate; execution-time constraint checks arrive in Wave 5.3.3
 
 ## Risks and Blockers
@@ -309,7 +311,7 @@ Task 1 (schema migration)
 
 - Approving an item in this wave stops at `approved` — the executor (Wave 5.3.2) picks it up; this keeps the trust gate shippable and testable independently.
 - Audit entries are decision- and execution-events only; conversational content is not audited here.
-- Action-type catalog starts minimal (email send, event create, generic Zapier action) and grows per feature — the schema is typed but extensible.
+- Action-type catalog starts minimal (email send, event create) and grows per feature — the schema is typed but extensible. Long-tail action types (ADR-013 Layer 3) are a future addition.
 
 ## Infrastructure Specifications
 
@@ -319,8 +321,8 @@ Task 1 (schema migration)
 create table approval_queue (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users(id) on delete cascade,
-  action_type text not null,                      -- 'send_email' | 'create_event' | 'zapier_action' | ...
-  provider    text not null,                      -- 'gmail' | 'outlook' | 'google-calendar' | 'zapier:<app>'
+  action_type text not null,                      -- 'send_email' | 'create_event' | ... (extensible)
+  provider    text not null,                      -- 'gmail' | 'outlook' | 'google-calendar' | ... (extensible)
   payload     jsonb not null,                     -- validated against the action_type schema
   status      text not null default 'pending'
               check (status in ('pending','approved','cancelled','executed','failed')),
@@ -371,5 +373,5 @@ create index audit_log_user_idx on audit_log (user_id, executed_at desc);
 ---
 
 **Template Version:** 2.0 (Scope-based Wave)
-**Last Updated:** 2026-07-02
+**Last Updated:** 2026-07-04
 **Note:** Waves are organized by logical scope, not time periods. Complete when scope is delivered.

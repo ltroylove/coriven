@@ -2,7 +2,7 @@
 preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-07-02"
-lastupdated: "2026-07-02T00:00:00"
+lastupdated: "2026-07-04T00:00:00"
 version: "1.0"
 type: wave
 status: Planning
@@ -50,9 +50,10 @@ relateddocuments:
 
 **Acceptance Criteria:**
 - [ ] An adversarial test suite runs a documented set of injection scenarios (instruction override, tool-call forgery, approval-bypass phrasing, hostile calendar descriptions) through the triage and chat paths.
-- [ ] In every scenario, no provider call and no webhook fires; the strongest possible outcome is a `pending` approval item visible to the user.
+- [ ] In every scenario, no provider call fires; the strongest possible outcome is a `pending` approval item visible to the user.
 - [ ] Untrusted content is verified to reach the model only as sandboxed summarization input with the hostile-content framing — never as instructions.
 - [ ] The suite runs in CI and failure of any scenario blocks the pipeline.
+- [ ] **Egress allowlist (ADR-013 §Security):** model output rendered to users or sent externally is verified to have non-allowlisted URLs and auto-fetchable resources stripped or neutralized before rendering/sending. Test coverage confirms that a hostile URL embedded in model output does not reach the user's browser or an external server unfiltered. (Both ShadowLeak and EchoLeak exfiltrated via URLs/auto-fetched resources, not via approved actions — egress control is a zero-trust requirement, not an optimization.)
 
 **Priority:** High
 
@@ -96,7 +97,7 @@ relateddocuments:
 **So that** the Epic's security spine is verified by inspection, not just by tests
 
 **Acceptance Criteria:**
-- [ ] A written review covers: RLS on queue and audit tables, audit append-only enforcement, payload validation completeness per action type, webhook secret handling (storage, comparison, rotation), token handling (no persistence, no logging), and prompt-injection surfaces.
+- [ ] A written review covers: RLS on queue and audit tables, audit append-only enforcement, payload validation completeness per action type, token handling (no persistence, no logging), prompt-injection surfaces, and **egress allowlist coverage** (URL/image stripping in model output rendered to users or sent externally — both 2025 incidents exfiltrated this way).
 - [ ] Every finding is classified; high/critical findings are remediated in this wave, lower findings are logged with an owner and target.
 - [ ] The review outcome is recorded in the repo and referenced from the Epic before any production release of Feature 5.3.
 
@@ -146,6 +147,7 @@ relateddocuments:
 **Acceptance Criteria:**
 - [ ] Covers instruction override, tool-call forgery, approval-bypass phrasing, and hostile calendar content at minimum
 - [ ] Asserts both the negative (nothing executed) and the boundary (worst case is `pending`)
+- [ ] Includes egress allowlist assertions: a test proves hostile URLs embedded in model output are stripped or neutralized before reaching the user or any external destination (ADR-013 §Security — ShadowLeak/EchoLeak exfiltrated via URLs, not actions)
 - [ ] Deterministic (mock-based) for CI, with a documented manual procedure for periodic live-model measurement
 
 ---
@@ -237,7 +239,7 @@ Waves 5.3.1 + 5.3.2 (complete)
 - Injection scenario catalog extendable to calendar-description content in 5.4
 
 **For other Features/Epics:**
-- Feature 5.5: Zapier path already covered by the invariant tests; connect UI can ship on top
+- Future long-tail epic (ADR-013 Layer 3): the injection scenario catalog and gate-integrity tests are designed for easy extension — new provider paths through the router are covered by adding scenarios to the existing catalog
 - Epic 3: execution-time constraint gate live — constraints now govern external actions, closing the "soft dependency" noted in Epic 5
 - Productization: security review document as the baseline for future audits
 
@@ -281,5 +283,5 @@ Waves 5.3.1 + 5.3.2 (complete)
 ---
 
 **Template Version:** 2.0 (Scope-based Wave)
-**Last Updated:** 2026-07-02
+**Last Updated:** 2026-07-04
 **Note:** Waves are organized by logical scope, not time periods. Complete when scope is delivered.
