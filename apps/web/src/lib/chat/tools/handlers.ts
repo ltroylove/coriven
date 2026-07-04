@@ -490,7 +490,7 @@ async function handleSubmitForApproval(input: Input, userId: string): Promise<Ha
     }
 
     // Write 'proposed' audit entry; non-blocking — failure does not abort the submission
-    void writeAudit({
+    await writeAudit({
       userId,
       approvalId: data.id,
       actionType,

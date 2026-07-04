@@ -419,7 +419,7 @@ Structured logging + platform metrics + targeted AI-cost tracking. (development-
 
 ### ADR-005: n8n as replaceable worker; start with direct API
 
-- **Status**: Accepted (§19.4). **Context**: avoid a workflow monolith. **Decision**: approval → executor; start with direct Gmail/Calendar calls, swap n8n in later. **Consequences**: identical approval UI; swap changes no assistant code.
+- **Status**: **Superseded by ADR-013** (2026-07-04). **Context**: avoid a workflow monolith. **Decision (original)**: approval → executor; start with direct Gmail/Calendar calls, swap n8n in later. **Superseded because**: research showed n8n is single-tenant and doesn't scale to a multi-user product; the integration write path now uses direct provider APIs behind Nango (OAuth authority), long-tail connectors deferred to a post-validation epic. The approval-queue → executor pattern this ADR introduced survives — only the "n8n as the eventual worker" clause is retired. See `ADR-013-integration-token-authority.md`.
 
 ### ADR-006: OpenAI embeddings alongside Anthropic
 

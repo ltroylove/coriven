@@ -70,7 +70,7 @@ export async function approveAction(id: string): Promise<{ error?: string }> {
     }
 
     // Audit the approval decision (fire-and-forget; never blocks the execution path)
-    void writeAudit({
+    await writeAudit({
       userId: user.id,
       approvalId: id,
       actionType: item.action_type as ApprovalActionType,
@@ -144,7 +144,7 @@ export async function cancelAction(id: string): Promise<{ error?: string }> {
       return { error: 'Failed to cancel the action. Please try again.' }
     }
 
-    void writeAudit({
+    await writeAudit({
       userId: user.id,
       approvalId: id,
       actionType: item.action_type as ApprovalActionType,
@@ -226,7 +226,7 @@ export async function approveWithModifiedPayload(
       return { error: 'Failed to approve the action. Please try again.' }
     }
 
-    void writeAudit({
+    await writeAudit({
       userId: user.id,
       approvalId: id,
       actionType: item.action_type as ApprovalActionType,

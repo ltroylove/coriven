@@ -305,7 +305,7 @@ export async function executeApprovedAction(
 
     await writeTerminalStatus(id, { ok: false, errorCode })
 
-    void writeAudit({
+    await writeAudit({
       userId: user_id,
       approvalId: id,
       actionType: action_type,
@@ -384,7 +384,7 @@ export async function executeApprovedAction(
   await writeTerminalStatus(id, execResult)
 
   // --- Audit ---
-  void writeAudit({
+  await writeAudit({
     userId: user_id,
     approvalId: id,
     actionType: action_type,
