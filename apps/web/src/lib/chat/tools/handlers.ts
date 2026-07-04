@@ -1,5 +1,11 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import type { ToolName, TaskPriority, TaskStatus, RecurrenceType } from '@personal-assistant/types'
+import type { Database } from '@/types/supabase'
+import { assembleBriefing } from '@/lib/jobs/briefing'
+
+type GoalStatus = Database['public']['Enums']['goal_status']
+type GoalConfidence = Database['public']['Enums']['goal_confidence']
+type GoalMomentum = Database['public']['Enums']['goal_momentum']
 import {
   handleSaveMemory,
   handleRecallMemories,
@@ -226,6 +232,157 @@ async function handleListConstraints(input: Input, userId: string): Promise<Hand
   return { content: JSON.stringify(data ?? []), is_error: false }
 }
 
+async function handleCreateGoal(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    const { data, error } = await db
+      .from('goals')
+      .insert({
+        user_id: userId,
+        title: String(input.title ?? '').trim(),
+        life_area_id: input.life_area_id ? String(input.life_area_id) : null,
+        why_it_matters: input.why_it_matters ? String(input.why_it_matters) : null,
+        success_metrics: input.success_metrics ? String(input.success_metrics) : null,
+        status: (input.status ?? 'active') as GoalStatus,
+        confidence: (input.confidence ?? 'medium') as GoalConfidence,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[handleCreateGoal] create_goal failed', { userId, error })
+      return { content: 'Failed to create goal. Please try again.', is_error: true }
+    }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    console.error('[handleCreateGoal] create_goal unexpected error', { userId, err })
+    return { content: 'Failed to create goal. Please try again.', is_error: true }
+  }
+}
+
+async function handleUpdateGoal(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+
+    type GoalUpdate = {
+      title?: string
+      why_it_matters?: string | null
+      success_metrics?: string | null
+      status?: GoalStatus
+      confidence?: GoalConfidence
+      life_area_id?: string | null
+    }
+
+    const updates: GoalUpdate = {}
+    if ('title' in input) updates.title = String(input.title)
+    if ('why_it_matters' in input) updates.why_it_matters = input.why_it_matters ? String(input.why_it_matters) : null
+    if ('success_metrics' in input) updates.success_metrics = input.success_metrics ? String(input.success_metrics) : null
+    if ('status' in input) updates.status = input.status as GoalStatus
+    if ('confidence' in input) updates.confidence = input.confidence as GoalConfidence
+    if ('life_area_id' in input) updates.life_area_id = input.life_area_id ? String(input.life_area_id) : null
+
+    const { data, error } = await db
+      .from('goals')
+      .update(updates)
+      .eq('id', String(input.id))
+      .eq('user_id', userId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[handleUpdateGoal] update_goal failed', { userId, error })
+      return { content: 'Failed to update goal. Please try again.', is_error: true }
+    }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    console.error('[handleUpdateGoal] update_goal unexpected error', { userId, err })
+    return { content: 'Failed to update goal. Please try again.', is_error: true }
+  }
+}
+
+async function handleListGoals(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    let query = db
+      .from('goals')
+      .select('*, projects(count)')
+      .eq('user_id', userId)
+
+    if (input.life_area_id) query = query.eq('life_area_id', String(input.life_area_id))
+    if (input.status) query = query.eq('status', input.status as GoalStatus)
+    query = query.order('created_at', { ascending: false }).limit(Number(input.limit ?? 20))
+
+    const { data, error } = await query
+    if (error) {
+      console.error('[handleListGoals] list_goals failed', { userId, error })
+      return { content: 'Failed to list goals. Please try again.', is_error: true }
+    }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    console.error('[handleListGoals] list_goals unexpected error', { userId, err })
+    return { content: 'Failed to list goals. Please try again.', is_error: true }
+  }
+}
+
+async function handleSetGoalMomentum(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    const { data, error } = await db
+      .from('goals')
+      .update({ momentum: input.momentum as GoalMomentum })
+      .eq('id', String(input.id))
+      .eq('user_id', userId)
+      .select('id, title, momentum')
+      .single()
+
+    if (error) {
+      console.error('[handleSetGoalMomentum] set_goal_momentum failed', { userId, error })
+      return { content: 'Failed to set goal momentum. Please try again.', is_error: true }
+    }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    console.error('[handleSetGoalMomentum] set_goal_momentum unexpected error', { userId, err })
+    return { content: 'Failed to set goal momentum. Please try again.', is_error: true }
+  }
+}
+
+async function handleCreateProject(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    const { data, error } = await db
+      .from('projects')
+      .insert({
+        user_id: userId,
+        title: String(input.title ?? '').trim(),
+        goal_id: String(input.goal_id),
+        description: input.description ? String(input.description) : null,
+        status: (input.status ?? 'pending') as TaskStatus,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[handleCreateProject] create_project failed', { userId, error })
+      return { content: 'Failed to create project. Please try again.', is_error: true }
+    }
+    return { content: JSON.stringify(data), is_error: false }
+  } catch (err) {
+    console.error('[handleCreateProject] create_project unexpected error', { userId, err })
+    return { content: 'Failed to create project. Please try again.', is_error: true }
+  }
+}
+
+async function handleGenerateDailyBriefing(_input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const briefing = await assembleBriefing(userId)
+    console.log(JSON.stringify({ event: 'generate_daily_briefing', userId }))
+    return { content: JSON.stringify(briefing), is_error: false }
+  } catch (err) {
+    console.error('[handleGenerateDailyBriefing] generate_daily_briefing unexpected error', { userId, err })
+    return { content: 'Failed to generate briefing. Please try again.', is_error: true }
+  }
+}
+
 async function handleSubmitForApproval(input: Input, userId: string): Promise<HandlerResult> {
   try {
     const actionType = String(input.action_type ?? '').trim()
@@ -310,6 +467,12 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   summarize_conversation: (input, userId) => memResult(handleSummarizeConversation(userId, input as never)),
   add_constraint: handleAddConstraint,
   list_constraints: handleListConstraints,
+  create_goal: handleCreateGoal,
+  update_goal: handleUpdateGoal,
+  list_goals: handleListGoals,
+  set_goal_momentum: handleSetGoalMomentum,
+  create_project: handleCreateProject,
+  generate_daily_briefing: handleGenerateDailyBriefing,
   submit_for_approval: handleSubmitForApproval,
 }
 

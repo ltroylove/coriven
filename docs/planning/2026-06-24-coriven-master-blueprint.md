@@ -1116,8 +1116,9 @@ Phase numbering follows the **2026-06-20 unified vision** (the later, more compl
 ### 17.4 Phase 4 — Communications Intelligence
 
 **Goal:** Email triage saves real time; approval gates prove trust.
-**Build:** `integrations` (encrypted tokens), `email_metadata`, `calendar_events`, `approval_queue`, `audit_log`; Gmail + Google Calendar OAuth; 15-min email poll + Haiku triage; `/email`; draft → approval → send; `/approvals`; meeting prep; follow-up detection; **n8n** as the execution worker (or direct API calls to start — the approval UI is identical either way).
-**Acceptance:** connect Gmail → emails classified within 15 min → "draft a reply to Sarah declining" → appears in approvals → approve → sent. Meeting-prep toast 15 min before an event.
+**Build:** `integrations` (`nango_connection_id` + provider per user), `email_metadata`, `calendar_events`, `approval_queue`, `audit_log`; Gmail + Google Calendar + Microsoft Graph/Outlook OAuth via self-hosted Nango; 15-min email poll + Haiku triage; `/email`; draft → approval → send; `/approvals`; meeting prep; follow-up detection.
+**Integration architecture (ADR-013, revised 2026-07-04 after research validation):** **Self-hosted Nango** owns all OAuth flows and token storage — multi-tenant, no raw tokens in Coriven's DB, keeps the Gmail data path inside our CASA assessment boundary. **Direct provider API calls** (Gmail, Outlook, Google Calendar) for read path (poll/fetch) and write path (approved actions). **Long-tail connectors deferred to a dedicated post-validation epic** — Zapier Embed ruled out as primary (user-pays economics); future candidates Composio/Pipedream Connect behind an MCP-shaped swappable interface; banking via Plaid/Teller regardless. Approval UI must show raw action payloads (never only an LLM summary); egress allowlist on model output; `gmail.readonly` may launch before `gmail.send`. Google CASA (~$1–5K/yr) exempt under 100 Gmail users — budget at productization.
+**Acceptance:** connect Gmail via Nango → emails classified within 15 min → "draft a reply to Sarah declining" → appears in approvals (raw payload visible) → approve → sent. Meeting-prep toast 15 min before an event. Untrusted email content never triggers an action (explicit test).
 
 ### 17.5 Phase 5 — Proactive Intelligence
 
@@ -1168,6 +1169,11 @@ Multi-user orgs with `org_id` on shared records and org-level RLS. Phase 6+. Sup
 ### 18.9 Custom Recurrence Intervals
 "Every 3 days," "every 2 weeks." The current set is daily/weekdays/weekly/monthly/yearly. Deferred.
 
+### 18.10 Advisor Model Pattern in Chat Engine
+The Anthropic API exposes an `advisor_20260301` server-side tool (beta) that pairs a fast/cheap **executor** model with a higher-capability **advisor** model consulted mid-generation. For Coriven this could mean Haiku or Sonnet as the executor for routine chat, calling Opus 4.8 (or Fable 5 when valid in the pairing table) as an advisor on complex reasoning tasks — better quality at lower average cost than running Opus for everything.
+
+**How to evaluate:** wire the advisor tool into `apps/web/src/lib/chat/engine.ts` behind a feature flag; compare response quality and latency on a set of Sentinel-heavy or goal-hierarchy queries. Key constraints: advisor model must be at least as capable as the executor; pass the full `response.content` including `advisor_tool_result` blocks back in subsequent turns; beta header `anthropic-beta: advisor-tool-2026-03-01` required. Deferred until the chat engine is stable post-Phase 3.
+
 ---
 
 ## 19. Open Decisions for the Build Plan
@@ -1180,9 +1186,15 @@ These are genuine product decisions that the consolidation surfaced. They are **
 
 3. **Sentinel timing — with the memory MVP or after?** The MVP (synchronous context assembly) ships value fastest; the Sentinel is the differentiator but adds Upstash + async complexity. Decide whether Phase 2 ships the MVP first and the Sentinel as 2b, or goes straight to the Sentinel.
 
-4. **n8n vs. direct API calls for Phase 4 launch.** The approval queue and UI are identical either way. Decide whether to stand up self-hosted n8n immediately or start with direct Gmail/Calendar API calls and swap in n8n later.
+4. ~~**n8n vs. direct API calls for Phase 4 launch.**~~ **Resolved (2026-07-02; revised 2026-07-04 after research validation, ADR-013):** **Self-hosted Nango** handles all OAuth flows and token storage (multi-tenant, no raw tokens in Coriven's DB). **Direct provider API calls** for deep integrations (Gmail, Outlook, Google Calendar) on both read and write paths. **Long-tail connectors deferred to a dedicated post-validation epic** — n8n ruled out (single-tenant), Zapier Embed ruled out as primary (each user needs their own paid Zapier plan); future candidates Composio / Pipedream Connect behind an MCP-shaped swappable interface, decided with real usage data on which apps users want.
 
 5. **Pricing validation.** Tiers ($12 / $22, 10-entity free cap) are reasoned but unvalidated. Decide whether to launch with them or test alternatives. The entity cap as the primary paywall is the load-bearing assumption.
+
+   **Market data (2026-07-04 research pass):** The $12/$22 tiers were reasoned before the full integration vision and are likely underpriced. Direct comps: **Martin** (closest analog — AI assistant for email/calendar/SMS/calls) charges $21/mo standard, $30/mo Pro, with Pro gating email pre-drafting and long-term memory — features Coriven treats as core. **Lindy** runs $49.99–$199.99/mo (prosumer, credit-based). **Motion** $19–29/mo. General-AI anchor (ChatGPT Plus / Claude Pro) is $20/mo; the typical professional assistant stack runs $40–70/mo.
+
+   **Cost model per daily-active user:** LLM is the dominant COGS (~$3–10/mo: Sonnet chat + Haiku triage); integrations are nearly free to bundle (Composio-style long-tail ~$0.30–1/user, Nango self-hosted + provider APIs pennies, CASA ~$0.20–0.80/user amortized at 500 users). Total ~$4–12/user/mo. At $22 margins are thin for heavy users; at $30–39, comfortable.
+
+   **Candidate structure to test at productization:** ~$19–22 base (email/calendar assistant, in line with Martin standard, above the ChatGPT anchor because Coriven *acts*); ~$35–39 "Connected Life" tier shipping with the long-tail connector epic, bundled integrations included — bundling at ~$1/user is strictly better UX and economics than any user-pays model (Zapier ruled out at any Coriven price point for this structural reason, not its absolute cost; see ADR-013 Layer 3).
 
 6. **Memory window as a paid limit — technically how?** "24h / 7d / 30d memory window" implies time-bounding retrieval by tier. Confirm this is enforced at retrieval (filter by age) and that it degrades gracefully rather than feeling broken.
 

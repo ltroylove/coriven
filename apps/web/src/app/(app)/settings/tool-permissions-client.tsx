@@ -18,6 +18,12 @@ const TOOL_LABELS: Record<ToolName, { label: string; description: string }> = {
   summarize_conversation: { label: 'Summarize conversations', description: 'Generate summaries of past conversations' },
   add_constraint: { label: 'Add constraints', description: 'Save behavioral rules that Coriven must always follow' },
   list_constraints: { label: 'List constraints', description: 'Show your active behavioral constraints in chat' },
+  create_goal: { label: 'Create goals', description: 'Add new goals to your goal hierarchy' },
+  update_goal: { label: 'Update goals', description: 'Edit goal details, status, and confidence' },
+  list_goals: { label: 'Read goals', description: 'Look up your goals and their associated project counts' },
+  set_goal_momentum: { label: 'Set goal momentum', description: 'Update the momentum signal on a goal' },
+  create_project: { label: 'Create projects', description: 'Add new projects linked to your goals' },
+  generate_daily_briefing: { label: 'Generate daily briefing', description: 'Assemble a daily briefing package from your goals and tasks' },
   submit_for_approval: { label: 'Submit for approval', description: 'Propose external actions (email, calendar) for your review before anything executes' },
 }
 
