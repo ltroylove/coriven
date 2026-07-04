@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { writeAudit } from '@/lib/approvals/audit'
 import { validatePayload } from '@/lib/approvals/payload-validator'
-import type { ApprovalActionType, ApprovalProvider } from '@personal-assistant/types'
+import { executeApprovedAction } from '@/lib/approvals/executors/router'
+import type { ApprovalActionType, ApprovalProvider, ApprovalQueueRow } from '@personal-assistant/types'
 import type { Json } from '@/types/supabase'
 
 async function getAuthenticatedUser() {
@@ -17,18 +18,26 @@ async function getAuthenticatedUser() {
 }
 
 /**
- * Approve a pending approval queue item.
- * Only valid from 'pending' status; sets status → 'approved' and stamps reviewed_at.
- * Appends an audit entry. Wave 5.3.2 adds the executor that picks up 'approved' items.
+ * Approve a pending approval queue item and immediately execute the approved action.
+ *
+ * Flow:
+ *   1. Validate ownership and status (must be 'pending').
+ *   2. Transition status pending → approved (race-safe conditional update).
+ *   3. Write 'approved' audit entry.
+ *   4. Execute the action via the router (router transitions to 'executed' or 'failed').
+ *   5. revalidatePath so the UI reflects the terminal state.
+ *
+ * The router owns the terminal status write and the execution audit entry.
+ * This action owns the pending→approved transition and its audit entry.
  */
 export async function approveAction(id: string): Promise<{ error?: string }> {
   try {
     const { supabase, user } = await getAuthenticatedUser()
 
-    // Fetch the item first to validate ownership and status
+    // Fetch the full item for ownership check and payload (needed by executor)
     const { data: item, error: fetchError } = await supabase
       .from('approval_queue')
-      .select('id, user_id, status, action_type, provider')
+      .select('id, user_id, status, action_type, provider, payload')
       .eq('id', id)
       .eq('user_id', user.id)
       .single()
@@ -49,11 +58,18 @@ export async function approveAction(id: string): Promise<{ error?: string }> {
       .eq('status', 'pending') // double-guard against race conditions
 
     if (updateError) {
-      console.error('[approvals] approveAction failed', { userId: user.id, id, error: updateError.message })
+      console.error(
+        JSON.stringify({
+          event: 'approvals.approveAction.update_error',
+          userId: user.id,
+          id,
+          error: updateError.message,
+        }),
+      )
       return { error: 'Failed to approve the action. Please try again.' }
     }
 
-    // Append audit entry via service-role writer
+    // Audit the approval decision (fire-and-forget; never blocks the execution path)
     void writeAudit({
       userId: user.id,
       approvalId: id,
@@ -67,10 +83,23 @@ export async function approveAction(id: string): Promise<{ error?: string }> {
       },
     })
 
+    // Execute — router writes terminal status + audit entry
+    const approvedItem: ApprovalQueueRow = {
+      ...(item as unknown as ApprovalQueueRow),
+      status: 'approved',
+    }
+    await executeApprovedAction(approvedItem, ['approved'])
+
     revalidatePath('/approvals')
     return {}
   } catch (err) {
-    console.error('[approvals] approveAction unexpected error', { id, err })
+    console.error(
+      JSON.stringify({
+        event: 'approvals.approveAction.unexpected_error',
+        id,
+        error: String(err),
+      }),
+    )
     return { error: 'An unexpected error occurred. Please try again.' }
   }
 }
@@ -107,7 +136,14 @@ export async function cancelAction(id: string): Promise<{ error?: string }> {
       .eq('status', 'pending')
 
     if (updateError) {
-      console.error('[approvals] cancelAction failed', { userId: user.id, id, error: updateError.message })
+      console.error(
+        JSON.stringify({
+          event: 'approvals.cancelAction.update_error',
+          userId: user.id,
+          id,
+          error: updateError.message,
+        }),
+      )
       return { error: 'Failed to cancel the action. Please try again.' }
     }
 
@@ -127,7 +163,13 @@ export async function cancelAction(id: string): Promise<{ error?: string }> {
     revalidatePath('/approvals')
     return {}
   } catch (err) {
-    console.error('[approvals] cancelAction unexpected error', { id, err })
+    console.error(
+      JSON.stringify({
+        event: 'approvals.cancelAction.unexpected_error',
+        id,
+        error: String(err),
+      }),
+    )
     return { error: 'An unexpected error occurred. Please try again.' }
   }
 }
@@ -176,7 +218,14 @@ export async function approveWithModifiedPayload(
       .eq('status', 'pending')
 
     if (updateError) {
-      console.error('[approvals] approveWithModifiedPayload failed', { userId: user.id, id, error: updateError.message })
+      console.error(
+        JSON.stringify({
+          event: 'approvals.approveWithModifiedPayload.update_error',
+          userId: user.id,
+          id,
+          error: updateError.message,
+        }),
+      )
       return { error: 'Failed to approve the action. Please try again.' }
     }
 
@@ -193,10 +242,86 @@ export async function approveWithModifiedPayload(
       },
     })
 
+    // Execute with the modified payload
+    const approvedItem: ApprovalQueueRow = {
+      id: item.id as string,
+      user_id: item.user_id as string,
+      action_type: item.action_type as ApprovalActionType,
+      provider: item.provider as ApprovalProvider,
+      payload: modifiedPayload as unknown as ApprovalQueueRow['payload'],
+      ai_summary: null,
+      status: 'approved',
+      created_at: new Date().toISOString(),
+      reviewed_at: new Date().toISOString(),
+      executed_at: null,
+      error_code: null,
+    }
+    await executeApprovedAction(approvedItem, ['approved'])
+
     revalidatePath('/approvals')
     return {}
   } catch (err) {
-    console.error('[approvals] approveWithModifiedPayload unexpected error', { id, err })
+    console.error(
+      JSON.stringify({
+        event: 'approvals.approveWithModifiedPayload.unexpected_error',
+        id,
+        error: String(err),
+      }),
+    )
+    return { error: 'An unexpected error occurred. Please try again.' }
+  }
+}
+
+/**
+ * Retry a failed approval queue item.
+ *
+ * Only valid from 'failed' status. Re-executes the stored (already-approved)
+ * payload through the router without requiring a new approval decision.
+ *
+ * Retry design and CHECK constraint:
+ *   The DB CHECK constraint is a simple IN check on the five allowed values
+ *   (pending, approved, cancelled, executed, failed). It does NOT restrict
+ *   state transitions — the column can be updated to any of those five values
+ *   regardless of its current value. This means failed → executed is valid.
+ *   The retry action leverages this: it passes allowedStatuses=['failed'] to
+ *   the router, which will write 'executed' or 'failed' as the terminal state.
+ *
+ * A second audit entry is written for the retry execution outcome.
+ */
+export async function retryAction(id: string): Promise<{ error?: string }> {
+  try {
+    const { supabase, user } = await getAuthenticatedUser()
+
+    // Fetch full row — need payload for re-execution
+    const { data: item, error: fetchError } = await supabase
+      .from('approval_queue')
+      .select('id, user_id, status, action_type, provider, payload, ai_summary, created_at, reviewed_at, executed_at, error_code')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (fetchError || !item) {
+      return { error: 'Approval item not found or access denied' }
+    }
+
+    if (item.status !== 'failed') {
+      return { error: `Cannot retry: item is in status "${item.status}" (only failed items can be retried)` }
+    }
+
+    // Router will guard allowedStatuses=['failed'] and write terminal status + audit
+    const failedItem: ApprovalQueueRow = item as unknown as ApprovalQueueRow
+    await executeApprovedAction(failedItem, ['failed'])
+
+    revalidatePath('/approvals')
+    return {}
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: 'approvals.retryAction.unexpected_error',
+        id,
+        error: String(err),
+      }),
+    )
     return { error: 'An unexpected error occurred. Please try again.' }
   }
 }

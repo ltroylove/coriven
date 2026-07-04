@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { ApprovalCard } from './approval-card'
+import { HistoryRow } from './history-row'
 
 export default async function ApprovalsPage() {
   const supabase = await createAuthServerClient()
@@ -65,51 +66,6 @@ export default async function ApprovalsPage() {
           </div>
         </section>
       )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// History row — read-only summary for terminal-state items
-// ---------------------------------------------------------------------------
-
-function HistoryRow({
-  item,
-}: {
-  item: {
-    id: string
-    action_type: string
-    provider: string
-    status: string
-    created_at: string
-    reviewed_at: string | null
-    payload: unknown
-  }
-}) {
-  const statusColors: Record<string, string> = {
-    approved: 'text-emerald-400',
-    cancelled: 'text-gray-500',
-    executed: 'text-blue-400',
-    failed: 'text-red-400',
-  }
-
-  return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-3 flex items-center justify-between gap-4">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-mono bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded">
-            {item.action_type}
-          </span>
-          <span className="text-xs text-gray-500">{item.provider}</span>
-          <span className={`text-xs font-medium ${statusColors[item.status] ?? 'text-gray-400'}`}>
-            {item.status}
-          </span>
-        </div>
-        <p className="text-xs text-gray-600 mt-1">
-          Created {new Date(item.created_at).toLocaleString()}
-          {item.reviewed_at && ` · Reviewed ${new Date(item.reviewed_at).toLocaleString()}`}
-        </p>
-      </div>
     </div>
   )
 }

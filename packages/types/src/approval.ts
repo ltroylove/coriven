@@ -95,3 +95,23 @@ export interface AuditLogRow {
   delegation: AuditDelegation
   created_at: string
 }
+
+// ---------------------------------------------------------------------------
+// Execution result — returned by executeApprovedAction
+// ---------------------------------------------------------------------------
+
+/** Stable error codes returned by executors. */
+export type ExecutionErrorCode =
+  | 'invalid_state'       // item was not in a state that permits execution
+  | 'unknown_provider'    // provider not recognised by router
+  | 'token_unavailable'   // Nango returned null — not connected or token revoked
+  | 'provider_rejected'   // provider API returned a non-2xx response
+  | 'network_error'       // fetch threw (timeout, DNS, etc.)
+  | 'executor_error'      // unexpected executor-internal failure
+
+export interface ExecutionResult {
+  ok: boolean
+  errorCode?: ExecutionErrorCode
+  /** Provider-assigned event ID for calendar creates/updates, if available */
+  providerRef?: string
+}
