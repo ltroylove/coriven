@@ -348,6 +348,107 @@ export type Database = {
         }
         Relationships: []
       }
+      approval_queue: {
+        Row: {
+          id: string
+          user_id: string
+          action_type: string
+          provider: string
+          payload: Json
+          ai_summary: string | null
+          status: string
+          created_at: string
+          reviewed_at: string | null
+          executed_at: string | null
+          error_code: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          action_type: string
+          provider: string
+          payload: Json
+          ai_summary?: string | null
+          status?: string
+          created_at?: string
+          reviewed_at?: string | null
+          executed_at?: string | null
+          error_code?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          action_type?: string
+          provider?: string
+          payload?: Json
+          ai_summary?: string | null
+          status?: string
+          created_at?: string
+          reviewed_at?: string | null
+          executed_at?: string | null
+          error_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_queue_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      audit_log: {
+        Row: {
+          id: string
+          user_id: string
+          approval_id: string | null
+          action_type: string
+          provider: string
+          status: string
+          error_code: string | null
+          delegation: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          approval_id?: string | null
+          action_type: string
+          provider: string
+          status: string
+          error_code?: string | null
+          delegation: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          approval_id?: string | null
+          action_type?: string
+          provider?: string
+          status?: string
+          error_code?: string | null
+          delegation?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_log_approval_id_fkey"
+            columns: ["approval_id"]
+            isOneToOne: false
+            referencedRelation: "approval_queue"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       tool_permissions: {
         Row: {
           enabled: boolean

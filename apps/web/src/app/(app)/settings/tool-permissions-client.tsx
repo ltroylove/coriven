@@ -18,6 +18,7 @@ const TOOL_LABELS: Record<ToolName, { label: string; description: string }> = {
   summarize_conversation: { label: 'Summarize conversations', description: 'Generate summaries of past conversations' },
   add_constraint: { label: 'Add constraints', description: 'Save behavioral rules that Coriven must always follow' },
   list_constraints: { label: 'List constraints', description: 'Show your active behavioral constraints in chat' },
+  submit_for_approval: { label: 'Submit for approval', description: 'Propose external actions (email, calendar) for your review before anything executes' },
 }
 
 type Permission = { tool_name: ToolName; enabled: boolean }

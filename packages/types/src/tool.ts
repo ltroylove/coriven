@@ -13,6 +13,7 @@ export type ToolName =
   | 'summarize_conversation'
   | 'add_constraint'
   | 'list_constraints'
+  | 'submit_for_approval'
 
 export interface BehavioralConstraint {
   id: string
