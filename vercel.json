@@ -7,6 +7,8 @@
   "installCommand": "npm install",
   "crons": [
     { "path": "/api/cron/nightly", "schedule": "0 12 * * *" },
-    { "path": "/api/cron/daily-briefing", "schedule": "*/30 * * * *" }
+    { "path": "/api/cron/daily-briefing", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/email-poll", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/calendar-sync", "schedule": "0 * * * *" }
   ]
 }

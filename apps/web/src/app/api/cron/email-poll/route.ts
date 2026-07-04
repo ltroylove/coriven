@@ -109,18 +109,16 @@ async function pollUserProvider(
     }
   })
 
-  // ON CONFLICT DO NOTHING: ignoreDuplicates = true uses the unique key
-  // (user_id, provider, message_id) to skip already-ingested messages.
+  // ON CONFLICT (user_id, provider, message_id) DO NOTHING — the checkpoint
+  // query can re-return the newest already-ingested message, so duplicates
+  // are expected and must be skipped, not errored. Only newly inserted rows
+  // come back from .select(), so `ingested` counts real insertions.
   const { data: inserted, error } = await db
     .from('email_metadata')
-    .insert(rows)
+    .upsert(rows, { onConflict: 'user_id,provider,message_id', ignoreDuplicates: true })
     .select('id')
 
   if (error) {
-    // Supabase returns "23505" for unique violations when not using ignoreDuplicates
-    // We use the explicit approach: filter before insert is less safe; upsert with
-    // onConflict DO NOTHING is idempotent.
-    // The Supabase JS client `ignoreDuplicates` maps to ON CONFLICT DO NOTHING.
     throw new Error(`DB upsert failed for user ${userId} provider ${provider}: ${error.message}`)
   }
 

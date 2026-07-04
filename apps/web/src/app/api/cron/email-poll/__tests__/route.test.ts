@@ -59,7 +59,7 @@ function makeRequest(authHeader?: string): Request {
 function makeChain(result: { data: unknown; error: null | { message: string } }): any {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chain: any = {}
-  const methods = ['select', 'eq', 'in', 'order', 'limit', 'maybeSingle', 'insert']
+  const methods = ['select', 'eq', 'in', 'order', 'limit', 'maybeSingle', 'insert', 'upsert']
   for (const m of methods) {
     chain[m] = vi.fn().mockReturnValue(chain)
   }
