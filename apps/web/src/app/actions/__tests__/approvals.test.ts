@@ -8,6 +8,20 @@ vi.mock('@/lib/supabase/auth-server', () => ({
 vi.mock('@/lib/approvals/audit', () => ({
   writeAudit: vi.fn().mockResolvedValue({ success: true }),
 }))
+// Router dependencies — must be mocked so approveAction tests don't reach
+// the real Nango client or Supabase service client during unit tests.
+vi.mock('@/lib/integrations/nango', () => ({
+  getProviderToken: vi.fn().mockResolvedValue(null),
+}))
+vi.mock('@/lib/supabase/server', () => ({
+  createServiceClient: vi.fn().mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    }),
+  }),
+}))
 
 // ---------------------------------------------------------------------------
 // Shared mock factory helpers
@@ -92,11 +106,16 @@ describe('approveAction', () => {
         status: 'pending',
         action_type: 'send_email',
         provider: 'gmail',
+        // payload required by executor — token mocked as null so execution
+        // fails gracefully with token_unavailable (does not throw to caller)
+        payload: { to: 'a@example.com', subject: 'S', body: 'B' },
       }) as never,
     )
 
     const { approveAction } = await import('../approvals')
     const result = await approveAction('item-1')
+    // approveAction returns {} even if execution fails (execution errors are
+    // written to DB status; they do not propagate to the caller)
     expect(result.error).toBeUndefined()
   })
 })
@@ -190,6 +209,8 @@ describe('approveWithModifiedPayload', () => {
       subject: 'Updated subject',
       body: 'Updated body',
     })
+    // Execution is attempted (token mocked as null → token_unavailable)
+    // but execution errors do not propagate to the caller
     expect(result.error).toBeUndefined()
   })
 })
