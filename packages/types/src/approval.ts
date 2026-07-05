@@ -100,6 +100,25 @@ export interface AuditLogRow {
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/approvals/pending — response types (ADR-013 §Security)
+// Intentionally carry NO payload-capable fields.
+// ---------------------------------------------------------------------------
+
+/** Single item in the pending-approvals summary. Payload fields are structurally absent. */
+export interface PendingApprovalItem {
+  id: string
+  action_type: ApprovalActionType
+  provider: ApprovalProvider
+  created_at: string
+}
+
+/** Response shape for GET /api/approvals/pending */
+export interface PendingApprovalsResponse {
+  count: number
+  items: PendingApprovalItem[]
+}
+
+// ---------------------------------------------------------------------------
 // Execution result — returned by executeApprovedAction
 // ---------------------------------------------------------------------------
 
