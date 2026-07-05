@@ -18,7 +18,9 @@ use tokio::time;
 
 use crate::{
     actions::ActionState,
+    approvals::{ApprovalAlertState, run_approvals_poll},
     auth::{AuthState, AuthStatus},
+    briefing::{BriefingSessionGuard, run_briefing_poll},
     notify::{dispatch_notification, NotificationMeta},
     offline::{DueCache, SnoozeResult, post_snooze},
 };
@@ -199,11 +201,19 @@ fn try_load_cache(path: &std::path::Path) -> Option<HashSet<String>> {
 pub struct PollState {
     /// Base URL for the Coriven web API (e.g. http://localhost:3000 in dev).
     pub api_base_url: String,
+    /// Wave 6.3.2: per-session briefing notification guard (not persisted).
+    pub briefing_guard: BriefingSessionGuard,
+    /// Wave 6.3.2: in-memory approval alert de-dup state (not persisted).
+    pub approval_alert_state: ApprovalAlertState,
 }
 
 impl PollState {
     pub fn new(api_base_url: String) -> Self {
-        PollState { api_base_url }
+        PollState {
+            api_base_url,
+            briefing_guard: BriefingSessionGuard::new(),
+            approval_alert_state: ApprovalAlertState::new(),
+        }
     }
 }
 
@@ -367,6 +377,120 @@ async fn run_poll_cycle(app: &AppHandle, poll_state: &Arc<Mutex<PollState>>) {
         "[coriven-tray] poll: cycle complete — fired={fired} suppressed={suppressed} offline={}",
         due_cache.is_offline
     );
+
+    // Wave 6.3.2: briefing and approval channels.
+    // These run on every poll cycle using the same signed-in gate and token
+    // already resolved above. Failures in these channels are fully isolated —
+    // a briefing or approval poll failure never affects the reminder channel.
+    //
+    // We do NOT run these channels when offline (due_cache.is_offline) because
+    // their data is not cacheable: the briefing delivered flag and approval queue
+    // are live server state, not a re-fireable payload. Skipping during offline
+    // is the correct thin-shell behavior — they reconcile on next successful poll.
+    if !due_cache.is_offline {
+        // Run briefing channel (lock-free-across-await pattern — see function doc).
+        run_briefing_poll_with_state(app, poll_state, &token).await;
+
+        // Run approvals channel (same lock-free-across-await pattern).
+        run_approvals_poll_with_state(app, poll_state, &token).await;
+    } else {
+        eprintln!(
+            "[coriven-tray] poll: offline — skipping briefing and approval channels (no cacheable state)"
+        );
+    }
+}
+
+/// Run the briefing poll with shared PollState, using a lock-free-across-await pattern.
+///
+/// Mutex guards cannot be held across `.await` points in Rust — doing so would
+/// block the executor or cause a runtime panic. The solution is the snapshot/writeback
+/// pattern used throughout this module (same as `flush_snooze_queue`):
+///
+///   1. Lock → snapshot mutable state → release lock
+///   2. Perform all async I/O (no lock held)
+///   3. Lock → write back any state changes → release lock
+///
+/// `run_poll_cycle` is the sole caller and runs in a single Tokio task, so there
+/// is no concurrent mutation of `poll_state` during this function's execution.
+async fn run_briefing_poll_with_state(
+    app: &AppHandle,
+    poll_state: &Arc<Mutex<PollState>>,
+    token: &str,
+) {
+    // Step 1: snapshot guard state and base URL (lock → read → release).
+    let (already_notified_ids, base_url) = {
+        match poll_state.lock() {
+            Ok(ps) => {
+                let ids = ps.briefing_guard.notified_ids.clone();
+                (ids, ps.api_base_url.clone())
+            }
+            Err(_) => {
+                eprintln!("[coriven-tray] briefing: poll_state lock poisoned — skipping");
+                return;
+            }
+        }
+    };
+
+    // Reconstruct a temporary guard from the snapshot — no lock held during await.
+    let mut temp_guard = BriefingSessionGuard::new();
+    for id in &already_notified_ids {
+        temp_guard.mark_notified(id.clone());
+    }
+
+    // Step 2: async poll (no lock held across any await point).
+    run_briefing_poll(app, &mut temp_guard, token, &base_url).await;
+
+    // Step 3: write back any newly notified ids (lock → update → release).
+    let newly_notified: Vec<String> = temp_guard
+        .notified_ids
+        .iter()
+        .filter(|id| !already_notified_ids.contains(*id))
+        .cloned()
+        .collect();
+
+    if !newly_notified.is_empty() {
+        if let Ok(mut ps) = poll_state.lock() {
+            for id in newly_notified {
+                ps.briefing_guard.mark_notified(id);
+            }
+        }
+    }
+}
+
+/// Run the approvals poll with shared PollState, using the lock-free-across-await pattern.
+///
+/// Same snapshot/writeback design as `run_briefing_poll_with_state` — see that
+/// function's doc for the rationale.
+async fn run_approvals_poll_with_state(
+    app: &AppHandle,
+    poll_state: &Arc<Mutex<PollState>>,
+    token: &str,
+) {
+    // Step 1: snapshot alerted_ids set and base_url (lock → read → release).
+    let (alerted_ids_snapshot, base_url) = {
+        match poll_state.lock() {
+            Ok(ps) => {
+                let ids = ps.approval_alert_state.alerted_ids.clone();
+                (ids, ps.api_base_url.clone())
+            }
+            Err(_) => {
+                eprintln!("[coriven-tray] approvals: poll_state lock poisoned — skipping");
+                return;
+            }
+        }
+    };
+
+    // 2. Reconstruct a local alert state from the snapshot.
+    let mut temp_state = crate::approvals::ApprovalAlertState::new();
+    temp_state.alerted_ids = alerted_ids_snapshot;
+
+    // 3. Run the async approvals poll (no lock held).
+    run_approvals_poll(app, &mut temp_state, token, &base_url).await;
+
+    // 4. Write back the updated alerted_ids (lock → replace → release).
+    if let Ok(mut ps) = poll_state.lock() {
+        ps.approval_alert_state.alerted_ids = temp_state.alerted_ids;
+    }
 }
 
 /// Drain the snooze retry queue on reconnect (FIFO, exactly-once on 2xx).

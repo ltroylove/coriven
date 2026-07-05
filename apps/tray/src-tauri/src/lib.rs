@@ -2,12 +2,15 @@
 // This app contains NO database client, NO Supabase data access, NO recurrence math,
 // NO "what's due" logic, and NO business rules. It only: shows a tray icon, manages
 // auth lifecycle (Wave 6.1.2), polls the backend for due reminders (Wave 6.2.1),
-// fires native Windows toasts, and handles snooze/dismiss actions (Wave 6.2.2).
-// All durable logic lives in the backend API.
+// fires native Windows toasts, handles snooze/dismiss actions (Wave 6.2.2),
+// delivers the daily briefing notification (Wave 6.3.2), and alerts on pending
+// approvals (Wave 6.3.2). All durable logic lives in the backend API.
 // Violations of this constraint are a review-gate failure.
 
 pub mod actions;
+pub mod approvals;
 pub mod auth;
+pub mod briefing;
 pub mod notify;
 pub mod offline;
 pub mod poll;
