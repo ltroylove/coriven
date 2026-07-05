@@ -10,8 +10,8 @@ domain: implementation
 product:
   - coriven
 epic: "7"
-feature: "7.4"
-wave: "7.4.1"
+feature: "8.4"
+wave: "8.4.1"
 agents: []
 tags: [coriven, onboarding, wizard, first-run, goals, tasks, ux-pass-6]
 relateddocuments:
@@ -22,7 +22,7 @@ relateddocuments:
   - "docs/architecture/_main/05a-UX-Foundations.md"
 ---
 
-# Wave 7.4.1: Onboarding Wizard
+# Wave 8.4.1: Onboarding Wizard
 
 ## Wave Overview
 
@@ -351,4 +351,4 @@ Task 7.4.1.1.1 (migration: onboarding_completed_at)
 - Product Vision: `docs/architecture/_main/01-Product-Vision.md` §Customer Success — Onboarding
 - UX: `docs/architecture/_main/05-User-Experience.md` §First-time user flow, §User Journey
 - UX Foundations: `docs/architecture/_main/05a-UX-Foundations.md` Pass 4 (cognitive load), Pass 6 (first-run, zero-doc, 4-step wizard)
-- Epic 7: `docs/implementation/_main/epic-7-productization.md`
+- Epic 8: `docs/implementation/_main/epic-7-productization.md`

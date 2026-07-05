@@ -10,8 +10,8 @@ domain: implementation
 product:
   - coriven
 epic: "6"
-feature: "6.4"
-wave: "6.4.1"
+feature: "7.4"
+wave: "7.4.1"
 agents: []
 tags: [coriven, proactive, cross-context, chat, memory, goals, email, sentinel]
 relateddocuments:
@@ -22,7 +22,7 @@ relateddocuments:
   - "docs/planning/2026-06-24-coriven-master-blueprint.md"
 ---
 
-# Wave 6.4.1: Cross-Context Queries
+# Wave 7.4.1: Cross-Context Queries
 
 ## Wave Overview
 
@@ -223,7 +223,7 @@ No new tables required. Cross-context queries compose data from existing stores:
 - `entity_profiles`, `memories` (Epic 2)
 - `goals`, `projects`, `life_areas` (Epic 4)
 - `email_metadata` (Epic 5, conditional)
-- `detected_patterns` (Wave 6.1.1)
+- `detected_patterns` (Wave 7.1.1)
 
 **Query efficiency:** All tool handlers must use a single Supabase query with appropriate filters (no N+1 loops over results). Any handler that currently performs N+1 queries (e.g., fetching related entities per-memory) must be refactored before this wave closes.
 
@@ -293,7 +293,7 @@ No new Vercel Cron entries — cross-context is a real-time chat feature.
 
 | Risk | Impact | Probability | Mitigation |
 |---|---|---|---|
-| Epic 2 or Epic 4 tools not yet registered | High | Med | Wave 6.4.1 is blocked on those tool registrations; document as prerequisites; Stories 6.4.1.1 and 6.4.1.2 can be partially implemented against stubs |
+| Epic 2 or Epic 4 tools not yet registered | High | Med | Wave 7.4.1 is blocked on those tool registrations; document as prerequisites; Stories 6.4.1.1 and 6.4.1.2 can be partially implemented against stubs |
 | Multi-tool turn count exceeds the 10-turn cap | Med | Low | Three-store query requires ~2 Anthropic round-trips (tool call + synthesis); well within cap; monitor turn counts in production |
 | Claude ignores cross-context system prompt instruction | Med | Low | System prompt extension is concise and direct; integration test validates the behavior against a mocked Claude response; real model behavior verified in manual smoke test |
 | Email tool surfaces sensitive metadata | Med | Low | Handler is strictly limited to `email_metadata` table; no body fields; privacy invariant enforced at the handler level; reviewed in code review |
@@ -302,9 +302,9 @@ No new Vercel Cron entries — cross-context is a real-time chat feature.
 
 ## Related Documentation
 
-- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 6.4
+- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 7.4
 - Architecture: `docs/architecture/_main/04-Architecture.md` — Chat Engine, Tool Registry, data model (§14)
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` — Feature 8, AI-Specific Business Rules
 - UX: `docs/architecture/_main/05-User-Experience.md` — AI transparency, explainability, error recovery
 - Blueprint: `docs/planning/2026-06-24-coriven-master-blueprint.md` — §12 intro (cross-context), §6 (tool registry), §14
-- Preceding waves: `docs/implementation/iterations/wave-6.1.1-pattern-detection.md`, `wave-6.2.1-stale-goal-nudges.md`, `wave-6.3.1-weekly-review.md`
+- Preceding waves: `docs/implementation/iterations/wave-7.1.1-pattern-detection.md`, `wave-7.2.1-stale-goal-nudges.md`, `wave-7.3.1-weekly-review.md`
