@@ -22,6 +22,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'set_goal_momentum',
   'create_project',
   'generate_daily_briefing',
+  'submit_for_approval',
+  'get_email_thread',
 ]
 
 export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
@@ -379,6 +381,67 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
       type: 'object',
       properties: {},
       required: [],
+    },
+  },
+
+  get_email_thread: {
+    name: 'get_email_thread',
+    description:
+      'Fetch the full body of a specific email message on demand from the user\'s connected email account. ' +
+      'The content is retrieved live and is never stored. ' +
+      'Use this when the user asks to read or discuss the content of a specific email.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        provider: {
+          type: 'string',
+          enum: ['gmail', 'outlook'],
+          description: 'The email provider that owns this message.',
+        },
+        message_id: {
+          type: 'string',
+          description: 'The provider-native message ID (from email_metadata).',
+        },
+      },
+      required: ['provider', 'message_id'],
+    },
+  },
+
+  submit_for_approval: {
+    name: 'submit_for_approval',
+    description:
+      'Propose an external-world action (send email, create/update calendar event) for the user to review. ' +
+      'The action does NOT execute — it enters a pending approval queue where the user can approve, modify, or cancel it. ' +
+      'Always use this instead of acting directly when an action would change state outside Coriven.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        action_type: {
+          type: 'string',
+          enum: ['send_email', 'create_calendar_event', 'update_calendar_event'],
+          description: 'The type of external action being proposed.',
+        },
+        provider: {
+          type: 'string',
+          enum: ['gmail', 'outlook', 'google_calendar', 'outlook_calendar'],
+          description: 'The provider/integration that would execute this action.',
+        },
+        payload: {
+          type: 'object',
+          description:
+            'Structured data for the action. ' +
+            'send_email: { to, subject, body }. ' +
+            'create_calendar_event: { title, start (ISO 8601), end (ISO 8601), description?, attendees? }. ' +
+            'update_calendar_event: { event_id, title?, start?, end?, description? }.',
+        },
+        ai_summary: {
+          type: 'string',
+          description:
+            'A short plain-language description of what this action does and why you are proposing it. ' +
+            'Shown alongside the raw payload on the approvals page. Optional.',
+        },
+      },
+      required: ['action_type', 'provider', 'payload'],
     },
   },
 }
