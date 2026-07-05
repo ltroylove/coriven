@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { ALL_TOOL_NAMES } from '@/lib/chat/tools/registry'
@@ -58,6 +59,27 @@ export default async function SettingsPage() {
     <div className="max-w-lg">
       <h1 className="text-2xl font-semibold text-white mb-1">Settings</h1>
       <p className="text-sm text-gray-500 mb-8">Control what the AI assistant can do on your behalf.</p>
+
+      <section className="mb-8">
+        <h2 className="text-xs font-medium uppercase tracking-widest text-gray-500 mb-3">
+          Integrations
+        </h2>
+        <Link
+          href="/settings/integrations"
+          className="flex items-center justify-between py-3 px-4 rounded-lg border border-gray-800 bg-gray-900/60 hover:border-gray-700 hover:bg-gray-900 transition-colors group"
+          aria-label="Manage connected accounts and OAuth integrations"
+        >
+          <div>
+            <p className="text-sm font-medium text-gray-200">Connected accounts</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Gmail, Outlook, Google Calendar — manage OAuth connections
+            </p>
+          </div>
+          <span className="text-gray-600 group-hover:text-gray-400 transition-colors" aria-hidden="true">
+            &#8250;
+          </span>
+        </Link>
+      </section>
 
       <section className="mb-10">
         <h2 className="text-xs font-medium uppercase tracking-widest text-gray-500 mb-3">

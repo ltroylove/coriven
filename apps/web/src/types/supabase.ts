@@ -226,6 +226,97 @@ export type Database = {
           }
         ]
       }
+      integrations: {
+        Row: {
+          id: string
+          user_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          nango_connection_id: string
+          scopes: string[]
+          connected_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          nango_connection_id: string
+          scopes?: string[]
+          connected_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: Database["public"]["Enums"]["integration_provider"]
+          nango_connection_id?: string
+          scopes?: string[]
+          connected_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      calendar_events: {
+        Row: {
+          id: string
+          user_id: string
+          provider: string
+          event_id: string
+          title: string | null
+          start_at: string
+          end_at: string | null
+          attendees: Json
+          location: string | null
+          description: string | null
+          is_all_day: boolean
+          synced_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: string
+          event_id: string
+          title?: string | null
+          start_at: string
+          end_at?: string | null
+          attendees?: Json
+          location?: string | null
+          description?: string | null
+          is_all_day?: boolean
+          synced_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: string
+          event_id?: string
+          title?: string | null
+          start_at?: string
+          end_at?: string | null
+          attendees?: Json
+          location?: string | null
+          description?: string | null
+          is_all_day?: boolean
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       behavioral_constraints: {
         Row: {
           id: string
@@ -562,6 +653,257 @@ export type Database = {
           }
         ]
       }
+      approval_queue: {
+        Row: {
+          id: string
+          user_id: string
+          action_type: string
+          provider: string
+          payload: Json
+          ai_summary: string | null
+          status: string
+          created_at: string
+          reviewed_at: string | null
+          executed_at: string | null
+          error_code: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          action_type: string
+          provider: string
+          payload: Json
+          ai_summary?: string | null
+          status?: string
+          created_at?: string
+          reviewed_at?: string | null
+          executed_at?: string | null
+          error_code?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          action_type?: string
+          provider?: string
+          payload?: Json
+          ai_summary?: string | null
+          status?: string
+          created_at?: string
+          reviewed_at?: string | null
+          executed_at?: string | null
+          error_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_queue_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      audit_log: {
+        Row: {
+          id: string
+          user_id: string
+          approval_id: string | null
+          action_type: string
+          provider: string
+          status: string
+          error_code: string | null
+          delegation: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          approval_id?: string | null
+          action_type: string
+          provider: string
+          status: string
+          error_code?: string | null
+          delegation: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          approval_id?: string | null
+          action_type?: string
+          provider?: string
+          status?: string
+          error_code?: string | null
+          delegation?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_log_approval_id_fkey"
+            columns: ["approval_id"]
+            isOneToOne: false
+            referencedRelation: "approval_queue"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      meeting_briefs: {
+        Row: {
+          id: string
+          user_id: string
+          event_id: string
+          provider: string
+          event_title: string | null
+          event_start: string
+          content: Json
+          delivered_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          event_id: string
+          provider: string
+          event_title?: string | null
+          event_start: string
+          content: Json
+          delivered_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          event_id?: string
+          provider?: string
+          event_title?: string | null
+          event_start?: string
+          content?: Json
+          delivered_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_briefs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      email_metadata: {
+        Row: {
+          id: string
+          user_id: string
+          provider: string
+          message_id: string
+          thread_id: string | null
+          from_address: string | null
+          subject: string | null
+          received_at: string | null
+          urgency: Database["public"]["Enums"]["email_urgency"]
+          category: Database["public"]["Enums"]["email_category"] | null
+          ai_summary: string | null
+          is_read: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: string
+          message_id: string
+          thread_id?: string | null
+          from_address?: string | null
+          subject?: string | null
+          received_at?: string | null
+          urgency?: Database["public"]["Enums"]["email_urgency"]
+          category?: Database["public"]["Enums"]["email_category"] | null
+          ai_summary?: string | null
+          is_read?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: string
+          message_id?: string
+          thread_id?: string | null
+          from_address?: string | null
+          subject?: string | null
+          received_at?: string | null
+          urgency?: Database["public"]["Enums"]["email_urgency"]
+          category?: Database["public"]["Enums"]["email_category"] | null
+          ai_summary?: string | null
+          is_read?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_metadata_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      followup_candidates: {
+        Row: {
+          id: string
+          user_id: string
+          provider: string
+          thread_id: string
+          last_sent_message_id: string | null
+          subject: string | null
+          to_address: string | null
+          last_sent_at: string
+          detected_at: string
+          dismissed: boolean
+          cleared_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: string
+          thread_id: string
+          last_sent_message_id?: string | null
+          subject?: string | null
+          to_address?: string | null
+          last_sent_at: string
+          detected_at?: string
+          dismissed?: boolean
+          cleared_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: string
+          thread_id?: string
+          last_sent_message_id?: string | null
+          subject?: string | null
+          to_address?: string | null
+          last_sent_at?: string
+          detected_at?: string
+          dismissed?: boolean
+          cleared_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_candidates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       tool_permissions: {
         Row: {
           enabled: boolean
@@ -630,6 +972,9 @@ export type Database = {
       }
     }
     Enums: {
+      email_urgency: "critical" | "high" | "normal" | "low"
+      email_category: "important" | "action_required" | "informational" | "promotional" | "spam"
+      integration_provider: "gmail" | "outlook" | "google_calendar" | "outlook_calendar"
       entity_profile_type: "person" | "place" | "project" | "thing" | "resource"
       goal_confidence: "high" | "medium" | "low"
       goal_momentum: "improving" | "stable" | "declining"
@@ -774,6 +1119,8 @@ export const Constants = {
   },
   public: {
     Enums: {
+      email_urgency: ["critical", "high", "normal", "low"],
+      email_category: ["important", "action_required", "informational", "promotional", "spam"],
       entity_profile_type: ["person", "place", "project", "thing", "resource"],
       goal_confidence: ["high", "medium", "low"],
       goal_momentum: ["improving", "stable", "declining"],

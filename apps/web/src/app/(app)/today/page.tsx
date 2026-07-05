@@ -3,6 +3,104 @@ import Link from 'next/link'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { BriefingSection } from '@/components/briefing/briefing-section'
 import type { BriefingContent } from '@/lib/jobs/briefing'
+import type { MeetingBriefContent } from '@/lib/jobs/meeting-prep'
+
+// ---------------------------------------------------------------------------
+// MeetingPrepSection
+// Renders upcoming meeting briefs (next 2 hours) as plain text.
+// Omitted entirely when no briefs exist.
+// ---------------------------------------------------------------------------
+
+interface MeetingBriefRow {
+  id: string
+  event_title: string | null
+  event_start: string
+  content: unknown
+}
+
+function MeetingPrepSection({ briefs }: { briefs: MeetingBriefRow[] }) {
+  if (briefs.length === 0) return null
+
+  return (
+    <section className="max-w-xl">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+        Meeting Prep — Next 2 Hours
+      </h2>
+      <ul className="space-y-4">
+        {briefs.map((brief) => {
+          const briefContent = brief.content as MeetingBriefContent
+          const startTime = new Date(brief.event_start).toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+          })
+
+          return (
+            <li
+              key={brief.id}
+              className="rounded-lg border border-gray-800 px-4 py-3 space-y-3"
+            >
+              {/* Event header */}
+              <div className="flex items-start justify-between gap-4">
+                <span className="text-sm font-medium text-gray-100">
+                  {brief.event_title ?? 'Untitled event'}
+                </span>
+                <span className="text-xs text-gray-500 shrink-0">{startTime}</span>
+              </div>
+
+              {/* Attendees */}
+              {briefContent.attendees.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">Attendees</p>
+                  <p className="text-xs text-gray-400">
+                    {briefContent.attendees
+                      .map(a => a.name ? `${a.name} (${a.email})` : a.email)
+                      .join(', ')}
+                  </p>
+                </div>
+              )}
+
+              {/* Related emails count + first subject */}
+              <div>
+                <p className="text-xs text-gray-600 mb-1">
+                  Related emails: {briefContent.relatedEmails.length}
+                </p>
+                {briefContent.relatedEmails[0] && (
+                  <p className="text-xs text-gray-400 truncate">
+                    {briefContent.relatedEmails[0].subject ?? '(no subject)'}
+                  </p>
+                )}
+              </div>
+
+              {/* Open tasks count + first title */}
+              <div>
+                <p className="text-xs text-gray-600 mb-1">
+                  Open tasks: {briefContent.openTasks.length}
+                </p>
+                {briefContent.openTasks[0] && (
+                  <p className="text-xs text-gray-400 truncate">
+                    {briefContent.openTasks[0].title}
+                  </p>
+                )}
+              </div>
+
+              {/* Memories count */}
+              {briefContent.memories.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">
+                    Memories: {briefContent.memories.length}
+                  </p>
+                  <p className="text-xs text-gray-400 line-clamp-2">
+                    {briefContent.memories[0].content}
+                  </p>
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
 
 export default async function TodayPage() {
   const supabase = await createAuthServerClient()
@@ -28,12 +126,22 @@ export default async function TodayPage() {
     .eq('briefing_date', today)
     .maybeSingle()
 
+  // Meeting prep — briefs for events starting in the next 2 hours
+  const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000)
+  const { data: meetingBriefs } = await supabase
+    .from('meeting_briefs')
+    .select('id, event_title, event_start, content')
+    .eq('user_id', user.id)
+    .gte('event_start', new Date().toISOString())
+    .lte('event_start', twoHoursFromNow.toISOString())
+    .order('event_start', { ascending: true })
+
   if (briefingError && briefingError.code !== 'PGRST116') {
     console.error('[today] briefing fetch failed', briefingError)
     return <div>Couldn&apos;t load your briefing. Try refreshing.</div>
   }
 
-  // No briefing for today — empty state
+  // No briefing for today — empty state (still show meeting prep if available)
   if (!briefing) {
     return (
       <div>
@@ -41,7 +149,7 @@ export default async function TodayPage() {
           <h1 className="text-xl font-semibold text-white">Today</h1>
           <p className="text-sm text-gray-500 mt-0.5">Your daily briefing</p>
         </div>
-        <div className="rounded-lg border border-dashed border-gray-800 p-8 text-center max-w-md">
+        <div className="rounded-lg border border-dashed border-gray-800 p-8 text-center max-w-md mb-8">
           {/* 9c — removed hardcoded "tomorrow at 7am" assumption */}
           <p className="text-sm text-gray-400">
             Your daily briefing hasn&apos;t arrived yet. Check back after your configured briefing time, or ask Coriven anything in{' '}
@@ -51,6 +159,7 @@ export default async function TodayPage() {
             .
           </p>
         </div>
+        <MeetingPrepSection briefs={meetingBriefs ?? []} />
       </div>
     )
   }
@@ -151,6 +260,13 @@ export default async function TodayPage() {
           emptyMessage="No approvals pending."
         />
       </div>
+
+      {/* Meeting prep — only rendered when briefs exist */}
+      {(meetingBriefs ?? []).length > 0 && (
+        <div className="mt-8">
+          <MeetingPrepSection briefs={meetingBriefs ?? []} />
+        </div>
+      )}
     </div>
   )
 }
