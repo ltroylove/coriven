@@ -1,0 +1,17 @@
+# Rust build artifacts
+src-tauri/target/
+
+# Generated Tauri capability schemas (regenerated on build)
+src-tauri/gen/
+
+# Node modules (covered by root .gitignore, but explicit here for safety)
+node_modules/
+
+# Icon generator script output is committed (they're small placeholder assets)
+# If you want to exclude them: uncomment the next line
+# src-tauri/icons/*.png
+
+# NOTE: the root .gitignore ignores `dist/`, but this thin shell's webview
+# frontend (dist/index.html) is a hand-authored placeholder, NOT build output,
+# and tauri.conf.json's frontendDist points at ../dist. It is force-tracked
+# (git add -f). A real bundler-produced dist would change this.

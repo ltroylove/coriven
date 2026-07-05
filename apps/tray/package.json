@@ -1,0 +1,14 @@
+{
+  "name": "@personal-assistant/tray",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Coriven tray app — Tauri v2 thin shell (no business logic, no DB access)",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
+  }
+}
