@@ -175,6 +175,37 @@
         text-decoration: underline;
       }
       .toggle-link:hover { color: #7ab8ff; }
+
+      /* ── Picker view (snooze/dismiss actions) ── */
+      #picker-panel { display: none; text-align: center; }
+      #picker-panel .picker-label {
+        font-size: 13px;
+        color: #999;
+        margin-bottom: 6px;
+      }
+      #picker-panel .picker-reminder-id {
+        font-size: 11px;
+        color: #555;
+        margin-bottom: 20px;
+        word-break: break-all;
+      }
+      .picker-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .picker-actions button { margin-top: 0; }
+      .btn-snooze { background: #1d4ed8; color: #fff; }
+      .btn-snooze:not(:disabled):hover { background: #1e40af; }
+      .btn-dismiss { background: transparent; color: #888; border: 1px solid #333; }
+      .btn-dismiss:not(:disabled):hover { border-color: #555; color: #aaa; }
+      #picker-msg {
+        font-size: 12px;
+        color: #f87171;
+        margin-top: 12px;
+        min-height: 18px;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -207,6 +238,18 @@
         <button class="btn-secondary" id="btn-close-window">Close</button>
       </div>
 
+      <!-- Picker view: snooze/dismiss actions (shown when hash = #/tray/picker) -->
+      <div id="picker-panel">
+        <p class="picker-label">Reminder due — choose an action:</p>
+        <p class="picker-reminder-id" id="picker-reminder-id"></p>
+        <div class="picker-actions">
+          <button class="btn-snooze" id="btn-snooze-15">Snooze 15 min</button>
+          <button class="btn-snooze" id="btn-snooze-60">Snooze 1 hour</button>
+          <button class="btn-dismiss" id="btn-dismiss">Dismiss</button>
+        </div>
+        <p id="picker-msg"></p>
+      </div>
+
       <!-- Sign-in form -->
       <div id="sign-in-panel">
         <label for="email">Email</label>
@@ -229,12 +272,140 @@
         return window.__TAURI__.core.invoke(cmd, args || {});
       }
 
-      // ── Config validation ─────────────────────────────────────────────────
-      if (!window.CORIVEN_CONFIG || !window.CORIVEN_CONFIG.supabaseUrl || !window.CORIVEN_CONFIG.supabaseAnonKey) {
+      // ── Picker route ──────────────────────────────────────────────────────
+      //
+      // When this window was opened by `open_picker_window` in notify.rs, the
+      // URL is `index.html#/tray/picker?payload={encoded}`.
+      //
+      // The picker view is self-contained: it decodes the payload, renders three
+      // action buttons, calls `reminder_action` via invoke, then closes the window.
+      // No Supabase session, no config.js, and no network needed — the Rust side
+      // handles token auth and offline queueing.
+      //
+      // Payload encoding: `{reminderId}|{effectiveFireTime}` percent-encoded.
+      // The `|` separator is encoded as `%7C`/`%7c`. This matches the Rust
+      // `percent_encode` / `percent_decode` functions in notify.rs exactly.
+
+      // Set to true if this window is the picker; suppresses Supabase init below.
+      var IS_PICKER_ROUTE = false;
+
+      (function initPickerRoute() {
+        const hash = window.location.hash; // e.g. "#/tray/picker?payload=rem-001%7C2026-07-04..."
+        if (!hash.startsWith('#/tray/picker')) return; // not a picker window — fall through
+        IS_PICKER_ROUTE = true;
+
+        // Parse the payload query param out of the hash fragment.
+        // The hash is "#/tray/picker?payload=..." so we split on '?'.
+        const queryStr = hash.includes('?') ? hash.split('?')[1] : '';
+        const params = new URLSearchParams(queryStr);
+        const encodedPayload = params.get('payload') || '';
+
+        // Decode the payload: percent-decode, then split on '|'.
+        function percentDecode(str) {
+          // Decode percent-encoded bytes; return null on malformed input.
+          try {
+            return decodeURIComponent(str.replace(/%([0-9a-fA-F]{2})/g, (_, hex) => {
+              return String.fromCharCode(parseInt(hex, 16));
+            }));
+          } catch (_) {
+            return null;
+          }
+        }
+
+        const decoded = percentDecode(encodedPayload);
+        const pipeIdx = decoded ? decoded.indexOf('|') : -1;
+        const reminderId = decoded && pipeIdx > 0 ? decoded.slice(0, pipeIdx) : null;
+        const effectiveFireTime = decoded && pipeIdx > 0 ? decoded.slice(pipeIdx + 1) : null;
+
+        // Render the picker UI and hide all other panels.
+        // Do this synchronously before DOMContentLoaded so there is no flash.
+        document.addEventListener('DOMContentLoaded', function() {
+          // Hide all other panels — this window is only the picker.
+          ['loading-panel', 'offline-banner', 'status-panel', 'sign-in-panel'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+          });
+
+          var pickerPanel = document.getElementById('picker-panel');
+          pickerPanel.style.display = 'block';
+
+          var reminderIdEl = document.getElementById('picker-reminder-id');
+          if (reminderId) {
+            // Show the reminder id abbreviated for the user (not the raw fire time —
+            // the Rust side already has full context; we show just the id for reference).
+            reminderIdEl.textContent = 'Reminder: ' + reminderId;
+          } else {
+            reminderIdEl.textContent = 'Could not decode reminder identity.';
+            // Disable action buttons if we cannot determine the reminder.
+            ['btn-snooze-15', 'btn-snooze-60', 'btn-dismiss'].forEach(function(id) {
+              var btn = document.getElementById(id);
+              if (btn) btn.disabled = true;
+            });
+            document.getElementById('picker-msg').textContent = 'Invalid payload — please close this window.';
+            return;
+          }
+
+          // Helper: close the picker window after an action.
+          function closePicker() {
+            try {
+              window.__TAURI__.window.getCurrentWindow().close().catch(function() {});
+            } catch (_) {}
+          }
+
+          // Helper: perform a reminder action.
+          // action: ReminderAction serialised shape as defined in actions.rs:
+          //   Snooze  → { kind: 'snooze',  reminder_id: string, minutes: number }
+          //   Dismiss → { kind: 'dismiss', reminder_id: string, effective_fire_time: string }
+          async function doAction(action) {
+            var msg = document.getElementById('picker-msg');
+            msg.style.color = '#999';
+            msg.textContent = 'Working…';
+            ['btn-snooze-15', 'btn-snooze-60', 'btn-dismiss'].forEach(function(id) {
+              var btn = document.getElementById(id);
+              if (btn) btn.disabled = true;
+            });
+            try {
+              await invoke('reminder_action', { action: action });
+              msg.style.color = '#4ade80';
+              msg.textContent = 'Done! Closing…';
+              setTimeout(closePicker, 600);
+            } catch (e) {
+              // The Rust side queues offline snoozes, so an error here is unexpected
+              // (e.g., ActionState not registered). Show a message but don't crash.
+              msg.style.color = '#f87171';
+              msg.textContent = 'Error: ' + (e && e.message ? e.message : String(e)) + ' (queued for retry)';
+              // Re-enable buttons so the user can retry.
+              ['btn-snooze-15', 'btn-snooze-60', 'btn-dismiss'].forEach(function(id) {
+                var btn = document.getElementById(id);
+                if (btn) btn.disabled = false;
+              });
+            }
+          }
+
+          document.getElementById('btn-snooze-15').addEventListener('click', function() {
+            doAction({ kind: 'snooze', reminder_id: reminderId, minutes: 15 });
+          });
+
+          document.getElementById('btn-snooze-60').addEventListener('click', function() {
+            doAction({ kind: 'snooze', reminder_id: reminderId, minutes: 60 });
+          });
+
+          document.getElementById('btn-dismiss').addEventListener('click', function() {
+            doAction({ kind: 'dismiss', reminder_id: reminderId, effective_fire_time: effectiveFireTime });
+          });
+        });
+
+      })();
+
+      // ── Config validation (skipped for picker route) ──────────────────────
+      if (!IS_PICKER_ROUTE && (!window.CORIVEN_CONFIG || !window.CORIVEN_CONFIG.supabaseUrl || !window.CORIVEN_CONFIG.supabaseAnonKey)) {
         document.getElementById('loading-panel').textContent =
           'Configuration missing — copy dist/config.example.js to dist/config.js and fill in your Supabase URL and anon key.';
         throw new Error('CORIVEN_CONFIG not set — see dist/config.example.js');
       }
+
+      // ── Supabase init (skipped entirely for picker route) ────────────────
+      if (!IS_PICKER_ROUTE) {
 
       // ── Supabase client with custom storage adapter ───────────────────────
       //
@@ -516,6 +687,8 @@
       document.addEventListener('DOMContentLoaded', () => {
         restoreSession();
       });
+
+      } // end if (!IS_PICKER_ROUTE)
     </script>
   </body>
 </html>

@@ -2,12 +2,14 @@
 // This app contains NO database client, NO Supabase data access, NO recurrence math,
 // NO "what's due" logic, and NO business rules. It only: shows a tray icon, manages
 // auth lifecycle (Wave 6.1.2), polls the backend for due reminders (Wave 6.2.1),
-// and fires native Windows toasts.
+// fires native Windows toasts, and handles snooze/dismiss actions (Wave 6.2.2).
 // All durable logic lives in the backend API.
 // Violations of this constraint are a review-gate failure.
 
+pub mod actions;
 pub mod auth;
 pub mod notify;
+pub mod offline;
 pub mod poll;
 pub mod secure_store;
 
@@ -49,9 +51,11 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_opener::init())
         // Wave 6.2.1: notification plugin — native Windows toast delivery.
-        // Action buttons are not used in this wave (Wave 6.2.2 adds them).
+        // Action buttons are not the primary path (Wave 6.2.2 uses picker window —
+        // see notify.rs module comment for the rationale).
         .plugin(tauri_plugin_notification::init())
         // Wave 6.1.2: secure-storage + auth commands exposed to the webview.
+        // Wave 6.2.2: reminder_action command for the picker window.
         // These are the ONLY paths through which the refresh token is stored or loaded.
         .invoke_handler(tauri::generate_handler![
             // Secure storage bridge (refresh token ↔ OS keychain)
@@ -63,10 +67,17 @@ pub fn run() {
             notify_signed_in,
             notify_signed_out,
             notify_restore_pending,
+            // Wave 6.2.2: picker window action handler
+            reminder_action,
+            // Wave 6.2.2: open picker window for a reminder (deep link from toast click)
+            open_reminder_picker,
         ])
         // Managed auth state — holds the in-memory access token (never persisted).
         .manage(auth::AuthState::new())
         .setup(|app| {
+            // Wave 6.2.2: register action state (suppress store + snooze queue).
+            app.manage(actions::ActionState::new(app.handle()));
+
             setup_tray(app.handle())?;
 
             // Wave 6.2.1: start the background poll loop.
@@ -74,6 +85,10 @@ pub fn run() {
             // `web_app_url()`) so local dev and production use consistent config.
             let api_base_url = web_app_url();
             let poll_state = Arc::new(Mutex::new(poll::PollState::new(api_base_url)));
+
+            // Share poll_state with the tray menu event handler for Snooze All.
+            app.manage(SharedPollState(poll_state.clone()));
+
             poll::start_poll_loop(app.handle().clone(), poll_state);
 
             Ok(())
@@ -81,6 +96,9 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running Coriven tray application");
 }
+
+/// Wrapper so `Arc<Mutex<PollState>>` can be stored in Tauri managed state.
+pub struct SharedPollState(pub Arc<Mutex<poll::PollState>>);
 
 /// The Coriven web app base URL. Configurable for local dev vs production.
 /// Override by setting the CORIVEN_WEB_URL environment variable at runtime.
@@ -133,7 +151,12 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, "open_app", "Open App", true, None::<&str>)?;
     let sign_in_item = MenuItem::with_id(app, "sign_in", "Sign In…", true, None::<&str>)?;
     let sign_out_item = MenuItem::with_id(app, "sign_out", "Sign Out", true, None::<&str>)?;
-    let snooze_item = MenuItem::with_id(app, "snooze_all", "Snooze All", true, None::<&str>)?;
+
+    // Wave 6.2.2: "Snooze All" label shows offline indicator when in cached-data mode.
+    // The label is static at build time; runtime indication is via the eprintln log.
+    // A future wave can update the menu item label dynamically via the tray handle.
+    let snooze_item = MenuItem::with_id(app, "snooze_all", "Snooze All (1h)", true, None::<&str>)?;
+
     let autostart_item = MenuItem::with_id(
         app,
         "toggle_autostart",
@@ -179,8 +202,29 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 open_sign_in_window(app);
             }
             "snooze_all" => {
-                // TODO(wave-6.2): Wire to the POST /api/tasks/snooze-all endpoint.
-                eprintln!("[coriven-tray] Snooze All: not yet implemented (wave 6.2)");
+                // Wave 6.2.2: snooze every currently due reminder by 60 minutes.
+                // Uses the cached due payload so it works even when briefly offline.
+                let app_clone = app.clone();
+                let poll_state = app
+                    .try_state::<SharedPollState>()
+                    .map(|s| s.0.clone());
+
+                if let Some(ps) = poll_state {
+                    // Spawn as a Tokio task — the menu event handler must not block.
+                    tokio::spawn(async move {
+                        // Check offline status and log appropriately.
+                        let due_cache = crate::offline::DueCache::load(&app_clone);
+                        if due_cache.is_offline {
+                            eprintln!(
+                                "[coriven-tray] tray: Snooze All invoked in cached-data mode — {} reminder(s) in cache",
+                                due_cache.reminders.len()
+                            );
+                        }
+                        actions::snooze_all(app_clone, ps).await;
+                    });
+                } else {
+                    eprintln!("[coriven-tray] tray: Snooze All — SharedPollState unavailable");
+                }
             }
             "toggle_autostart" => {
                 // Toggle autostart via the autostart plugin.
@@ -255,6 +299,70 @@ fn open_sign_in_window(app: &AppHandle) {
         }
         Err(e) => {
             eprintln!("[coriven-tray] Failed to open sign-in window: {e}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Wave 6.2.2: Tauri commands exposed to the picker window webview
+// ---------------------------------------------------------------------------
+
+/// Handle a snooze or dismiss action from the picker window (or any future
+/// button source). This command is the single entry point for all reminder
+/// actions — the handler layer is button-source-agnostic.
+///
+/// Called from the picker window's JavaScript via `invoke('reminder_action', { action })`.
+///
+/// # Arguments
+/// - `action`: a JSON-serialised `ReminderAction` (`{ kind: "snooze", reminder_id, minutes }`
+///   or `{ kind: "dismiss", reminder_id, effective_fire_time }`).
+///
+/// # Security
+/// No token is passed through this command. The token is read from `AuthState`
+/// managed state inside `handle_action` — it never crosses the IPC boundary.
+#[tauri::command]
+async fn reminder_action(
+    app: AppHandle,
+    action: actions::ReminderAction,
+) -> Result<(), String> {
+    let poll_state = app
+        .try_state::<SharedPollState>()
+        .ok_or_else(|| "poll state unavailable".to_string())?
+        .0
+        .clone();
+
+    // Spawn fire-and-forget so the command returns immediately to the webview.
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        actions::handle_action(app_clone, action, poll_state).await;
+    });
+
+    Ok(())
+}
+
+/// Open the snooze/dismiss picker window for a specific reminder occurrence.
+///
+/// Called from the webview (e.g., on notification click event) with the encoded
+/// payload produced by `notify::encode_action_payload`.
+///
+/// This command is the bridge between a notification click and the picker window.
+/// It is also callable from the web UI for testing.
+#[tauri::command]
+fn open_reminder_picker(
+    app: AppHandle,
+    encoded_payload: String,
+) -> Result<(), String> {
+    match notify::decode_action_payload(&encoded_payload) {
+        Some((reminder_id, effective_fire_time)) => {
+            notify::open_picker_window(&app, &reminder_id, &effective_fire_time);
+            Ok(())
+        }
+        None => {
+            eprintln!(
+                "[coriven-tray] open_reminder_picker: malformed payload (len={})",
+                encoded_payload.len()
+            );
+            Err("malformed action payload".to_string())
         }
     }
 }

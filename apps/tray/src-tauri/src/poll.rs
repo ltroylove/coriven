@@ -13,12 +13,14 @@ use std::{
 };
 
 use serde::Deserialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::time;
 
 use crate::{
+    actions::ActionState,
     auth::{AuthState, AuthStatus},
     notify::{dispatch_notification, NotificationMeta},
+    offline::{DueCache, SnoozeResult, post_snooze},
 };
 
 // ---------------------------------------------------------------------------
@@ -42,7 +44,7 @@ pub const POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// The "effective fire time" for de-dup is:
 ///   snoozed_until if snoozed_until is Some and > remind_at, else remind_at.
 /// Both values come VERBATIM from the API — no recurrence math here.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct DueReminder {
     /// Primary key of the `task_reminders` row.
     pub id: String,
@@ -55,7 +57,7 @@ pub struct DueReminder {
 }
 
 /// Embedded task fields joined from `tasks`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct ReminderTask {
     pub title: String,
     // `status` is not used by the tray; the API already excludes done/cancelled tasks.
@@ -227,7 +229,12 @@ pub fn start_poll_loop(app: AppHandle, poll_state: Arc<Mutex<PollState>>) {
     });
 }
 
-/// Execute one poll cycle: fetch, decide, notify, update cache.
+/// Execute one poll cycle: fetch (or fall back to cache), decide, notify, update cache.
+///
+/// Wave 6.2.2 additions:
+///   - On poll failure, activates cached-data mode and fires from the last payload.
+///   - On successful poll, flushes the snooze retry queue (reconnect reconciliation).
+///   - On 401, emits a token-refresh signal to the webview.
 async fn run_poll_cycle(app: &AppHandle, poll_state: &Arc<Mutex<PollState>>) {
     // Read auth state. If not signed in, skip silently.
     let (token, api_base_url) = {
@@ -266,25 +273,52 @@ async fn run_poll_cycle(app: &AppHandle, poll_state: &Arc<Mutex<PollState>>) {
     let url = format!("{}/api/tasks/due", api_base_url);
     eprintln!("[coriven-tray] poll: fetching due reminders");
 
+    // Load the due-payload cache (used for offline fallback and for recording the
+    // last-known payload so Snooze All can target current due reminders).
+    let mut due_cache = DueCache::load(app);
+
     // Fetch due reminders from the backend.
     let reminders = match fetch_due_reminders(&url, &token).await {
-        Ok(r) => r,
+        Ok(r) => {
+            // Successful poll: update the cache and flush any queued snoozes.
+            let was_offline = due_cache.is_offline;
+            due_cache.update_from_poll(r.clone(), app);
+
+            if was_offline {
+                // Reconnection: flush the snooze retry queue.
+                flush_snooze_queue(app, poll_state, &token, &api_base_url).await;
+            }
+            r
+        }
+        Err(FetchError::Unauthorized) => {
+            // 401: token expired. Signal the webview to refresh.
+            eprintln!(
+                "[coriven-tray] poll: 401 received — emitting auth refresh-needed event"
+            );
+            let _ = app.emit("coriven://auth/refresh-needed", ());
+            // Fall back to the cached payload so reminders still fire.
+            due_cache.mark_offline(app);
+            due_cache.reminders.clone()
+        }
         Err(e) => {
-            // Log error class only — no token, no reminder content.
-            eprintln!("[coriven-tray] poll: fetch failed ({}); skipping cycle", e);
-            return;
+            // Network or other error — activate offline/cached-data mode.
+            eprintln!("[coriven-tray] poll: fetch failed ({}); using cached payload", e);
+            due_cache.mark_offline(app);
+            due_cache.reminders.clone()
         }
     };
 
     eprintln!(
-        "[coriven-tray] poll: {} reminder(s) returned by API",
-        reminders.len()
+        "[coriven-tray] poll: {} reminder(s) in payload (live or cached, offline={})",
+        reminders.len(),
+        due_cache.is_offline
     );
 
     // Load the persisted de-dup cache.
     let mut cache = DedupeCache::load(app);
 
     // Build the set of live keys from this response (used for pruning).
+    // When offline, we prune against the cached list (same reminders, stable set).
     let live_keys: HashSet<String> = reminders.iter().map(|r| dedup_key(r)).collect();
 
     // Prune stale entries — removes keys absent from this response.
@@ -330,19 +364,82 @@ async fn run_poll_cycle(app: &AppHandle, poll_state: &Arc<Mutex<PollState>>) {
     }
 
     eprintln!(
-        "[coriven-tray] poll: cycle complete — fired={fired} suppressed={suppressed}"
+        "[coriven-tray] poll: cycle complete — fired={fired} suppressed={suppressed} offline={}",
+        due_cache.is_offline
     );
+}
+
+/// Drain the snooze retry queue on reconnect (FIFO, exactly-once on 2xx).
+///
+/// Called only when we transition from offline → online (was_offline && now connected).
+/// Delivers each queued snooze to the backend; removes entries on 2xx only.
+/// Remaining failures (5xx or network) stay in the queue for the next reconnect.
+async fn flush_snooze_queue(
+    app: &AppHandle,
+    _poll_state: &Arc<Mutex<PollState>>,
+    token: &str,
+    api_base_url: &str,
+) {
+    let queue = match app.try_state::<ActionState>() {
+        Some(state) => match state.snooze_queue.lock() {
+            Ok(q) => q.clone(),
+            Err(_) => return,
+        },
+        None => {
+            // ActionState not registered yet (shouldn't happen in production).
+            eprintln!("[coriven-tray] poll: ActionState unavailable for queue flush");
+            return;
+        }
+    };
+
+    if queue.depth() == 0 {
+        return;
+    }
+
+    eprintln!(
+        "[coriven-tray] poll: reconnected — flushing {} queued snooze(s)",
+        queue.depth()
+    );
+
+    let mut delivered: Vec<String> = Vec::new();
+
+    for entry in queue.entries.iter() {
+        match post_snooze(api_base_url, &entry.reminder_id, entry.minutes, token).await {
+            SnoozeResult::Ok => {
+                delivered.push(entry.reminder_id.clone());
+            }
+            SnoozeResult::Unauthorized => {
+                // Token expired again mid-flush — signal refresh and stop.
+                eprintln!("[coriven-tray] poll: 401 during queue flush — stopping flush");
+                let _ = app.emit("coriven://auth/refresh-needed", ());
+                break;
+            }
+            SnoozeResult::Failed(ref e) => {
+                eprintln!(
+                    "[coriven-tray] poll: queue flush failed for reminder={}: {}",
+                    entry.reminder_id, e
+                );
+                // Leave in queue for next reconnect.
+            }
+        }
+    }
+
+    // Write back the pruned queue to managed state + disk.
+    if let Some(state) = app.try_state::<ActionState>() {
+        if let Ok(mut q) = state.snooze_queue.lock() {
+            q.remove_delivered(&delivered, app);
+        }
+    }
 }
 
 /// Fetch due reminders from the API.
 ///
-/// On a 401 response the caller should trigger token refresh (future enhancement —
-/// current session is not automatically refreshed in Wave 6.2.1 because the
-/// refresh token path requires webview interaction; a 401 is logged and skipped).
-///
-/// TODO(wave-6.2.2): Wire the Feature 6.1 refresh path here on 401 so silent
-/// token renewal happens in the background without requiring the user to re-open
-/// the sign-in window.
+/// Wave 6.2.2: On 401, returns `FetchError::Unauthorized` so the caller can
+/// emit `coriven://auth/refresh-needed` to the webview. Token refresh requires
+/// the webview's Supabase JS client — Rust cannot call Supabase directly without
+/// embedding the JS SDK. The webview listens for the event, calls
+/// `supabase.auth.refreshSession()`, and on success calls `notify_signed_in`
+/// with the new token. The next poll cycle then succeeds automatically.
 async fn fetch_due_reminders(
     url: &str,
     access_token: &str,
@@ -389,7 +486,7 @@ impl std::fmt::Display for FetchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FetchError::Network(e) => write!(f, "network: {e}"),
-            FetchError::Unauthorized => write!(f, "unauthorized (401) — session may be expired"),
+            FetchError::Unauthorized => write!(f, "unauthorized (401) — session expired; refresh-needed emitted"),
             FetchError::HttpError(code) => write!(f, "http {code}"),
             FetchError::ParseError(e) => write!(f, "parse error: {e}"),
         }
@@ -606,5 +703,54 @@ mod tests {
         let live: HashSet<String> = HashSet::new();
         cache.retain(|k| live.contains(k));
         assert!(cache.is_empty());
+    }
+
+    // ---------------------------------------------------------------------------
+    // Offline cache fire — pure logic test (no AppHandle)
+    // ---------------------------------------------------------------------------
+
+    /// Verify that the offline fallback logic fires from a cached payload:
+    /// reminders in the cache that are past-due and not in the dedup cache
+    /// should be notified.
+    #[test]
+    fn offline_cache_fires_past_due_reminders() {
+        let cached = vec![
+            make_reminder("rem-100", "2020-01-01T00:00:00Z"), // past-due
+            make_reminder("rem-101", "2099-12-31T23:59:59Z"), // future
+        ];
+        let dedup: HashSet<String> = HashSet::new();
+
+        let should_fire: Vec<&DueReminder> = cached
+            .iter()
+            .filter(|r| {
+                should_notify(r, &dedup) && is_at_or_before_now(effective_fire_time(r))
+            })
+            .collect();
+
+        assert_eq!(should_fire.len(), 1);
+        assert_eq!(should_fire[0].id, "rem-100");
+    }
+
+    /// Verify that reminders cancelled while offline (absent from reconnect payload)
+    /// do not fire after reconnect: cache prune removes their keys.
+    #[test]
+    fn reconnect_removes_cancelled_reminder_from_cache() {
+        // Simulate: rem-200 was in the offline cache and already notified.
+        // After reconnect, the API does NOT return rem-200 (it was cancelled).
+        let mut dedup: HashSet<String> = HashSet::new();
+        dedup.insert("rem-200|2026-07-04T10:00:00Z".to_string());
+
+        // New live payload from the reconnect response (only rem-201).
+        let live_reminders = vec![make_reminder("rem-201", "2026-07-04T11:00:00Z")];
+        let live_keys: HashSet<String> = live_reminders.iter().map(|r| dedup_key(r)).collect();
+
+        // Prune the dedup cache against live keys.
+        dedup.retain(|k| live_keys.contains(k));
+
+        // rem-200 is gone — would not re-fire.
+        assert!(!dedup.contains("rem-200|2026-07-04T10:00:00Z"));
+        // rem-201 would be notified (not in dedup after prune, it was never there).
+        let r201 = make_reminder("rem-201", "2026-07-04T11:00:00Z");
+        assert!(should_notify(&r201, &dedup));
     }
 }
