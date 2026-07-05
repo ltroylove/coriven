@@ -12,8 +12,8 @@ product:
 epic: "8"
 priority: "Medium"
 branch: "epic/8-productization"
-architecture: ["ADR-011"]
-tags: [coriven, billing, stripe, tiers, pwa, onboarding]
+architecture: ["ADR-011", "ADR-014"]
+tags: [coriven, billing, stripe, tiers, pwa, onboarding, desktop-distribution, code-signing]
 relateddocuments:
   - "docs/architecture/_main/01-Product-Vision.md"
   - "docs/architecture/_main/03-Business-Requirements.md"
@@ -42,6 +42,7 @@ A new user can self-serve onboard, hit a contextual upgrade prompt at the value 
 - Stripe subscription (Core/Pro) activates and gates tools/pages by `subscription_tier`.
 - Memory-window limit enforced at retrieval by tier (24h / 7d / 30d), degrading gracefully.
 - Mobile Web Push reminder fires via the PWA.
+- A visitor downloads the desktop tray from the web app's `/download` page and installs a **code-signed** build with no SmartScreen "unknown publisher" warning; the app auto-updates to the next release.
 
 ## Scope
 
@@ -55,7 +56,8 @@ A new user can self-serve onboard, hit a contextual upgrade prompt at the value 
 ### Out of Scope
 - Capacitor native iOS/Android (only if PWA usage shows demand — blueprint §15).
 - Team/shared contexts (`org_id`) — blueprint §18.8.
-- Tauri **Mac build + code-signing/notarization + release CI** — deferred here from Epic 6 (which shipped Windows-first, unsigned local; see ADR-014). Track and complete in this epic (or sooner if Mac demand arises).
+
+> The Tauri **Mac build + code-signing/notarization + release CI** deferred here from Epic 6 (Windows-first, unsigned local — ADR-014) is now **in scope as Feature 8.6** below.
 
 ## Features & Waves
 
@@ -96,11 +98,18 @@ A new user can self-serve onboard, hit a contextual upgrade prompt at the value 
 - **Dependencies:** Epic 1; reminder/briefing endpoints (Epics 1, 4).
 - **Wave Planning:** PWA-shell wave + Web-Push wave.
 
+### Feature 8.6: Desktop Distribution (Signed Installer, Download & Auto-Update)
+- **Scope:** Turn the Epic 6 tray from a local unsigned dev build into a downloadable, trusted product. Code-sign the Windows installer (removes the SmartScreen "unknown publisher" wall); add the **Mac build + notarization** (Apple Developer Program) deferred from Epic 6; a **release CI pipeline** that produces signed artifacts on tag; **artifact hosting**; a **`/download` page** in the web app (OS-detecting) linking to the current installer; and **auto-update** so installed clients pull new releases without a manual re-download.
+- **Key Technical Approach:** `tauri build` already targets NSIS `.exe` + MSI `.msi` (`apps/tray/src-tauri/tauri.conf.json`); add Windows code signing (an OV/EV certificate, or **Azure Trusted Signing** — cheaper, no hardware token) via the Tauri bundler's `windows.signCommand`/cert config, and macOS signing + `notarytool` notarization. CI (GitHub Actions) builds both artifacts on a version tag and publishes them (GitHub Releases or Vercel Blob). The web `/download` route detects OS via user-agent and serves the matching installer URL. Auto-update via **`tauri-plugin-updater`**: a static `latest.json` update manifest (signed with a Tauri updater key) hosted alongside the artifacts; the tray checks it on launch and self-updates. Distinct from Feature 8.5's PWA/Web Push (that is the *mobile* delivery surface; this is *desktop distribution*). See ADR-014, blueprint §13.4–§13.5.
+- **Requirements:** Blueprint §13.4 (signing & distribution); ADR-014 (deferred-to-productization items).
+- **Dependencies:** Epic 6 (the tray app + bundle config exist); Apple Developer Program + a Windows signing identity (procurement lead time — start early); a release/hosting target.
+- **Wave Planning:** Windows signing + release CI wave → Mac build + notarization wave → `/download` page + hosting wave → auto-update (updater plugin + signed manifest) wave.
+
 ## Dependencies
 
-**Prerequisites:** Epic 1 (deploy). Strong: Epic 2 (memory window), Epic 4 (goals for onboarding).
-**Enables:** Public launch; revenue; mobile reach.
-**External Dependencies:** Stripe, Web Push (browser push services), MealPrepForge LLC/DBA + Missouri fictitious-name registration.
+**Prerequisites:** Epic 1 (deploy). Strong: Epic 2 (memory window), Epic 4 (goals for onboarding), **Epic 6 (the Tauri tray + bundle config that Feature 8.6 signs and distributes)**.
+**Enables:** Public launch; revenue; mobile reach; a trusted desktop download.
+**External Dependencies:** Stripe, Web Push (browser push services), MealPrepForge LLC/DBA + Missouri fictitious-name registration; **a Windows code-signing identity (OV/EV cert or Azure Trusted Signing), the Apple Developer Program ($99/yr) for Mac notarization, and an artifact-hosting/release target (GitHub Releases or Vercel Blob).**
 
 ## Risks and Mitigation
 
@@ -110,6 +119,9 @@ A new user can self-serve onboard, hit a contextual upgrade prompt at the value 
 | Memory-window enforcement feels "broken" | Med | Med | Enforce at retrieval; degrade gracefully; clear messaging |
 | Stripe webhook reliability | Med | Low | Idempotent handlers; reconcile on read |
 | iOS Web Push limitations | Med | Med | Target Safari 16.4+; document; Capacitor only if demand |
+| Code-signing procurement lead time (cert/EV vetting, Apple enrollment) | Med | Med | Start early (parallel to other 8.x work); Azure Trusted Signing avoids the hardware-token/EV delay for Windows |
+| Unsigned installer scares users off (SmartScreen) | High | Low | Feature 8.6 signs before any public `/download` link ships; no unsigned public download |
+| Auto-update key management (updater signing key) | Med | Low | Generate + vault the Tauri updater keypair; treat like a release secret; rotation plan documented |
 
 ## Technical Considerations
 
@@ -126,6 +138,8 @@ Billing via MealPrepForge LLC (DBA). PCI handled by Stripe (no card data stored)
 
 ## Architecture Decision Records (ADRs)
 - ADR-011: Entity cap as the primary paywall; memory window enforced at retrieval
+- ADR-014: Tauri tray Windows-first/unsigned in Epic 6 — Mac build, code-signing, release CI, and PKCE deferred here (Feature 8.6)
+- (Candidate) an ADR for the Windows signing approach — Azure Trusted Signing vs. OV/EV certificate — when Feature 8.6 is designed
 
 ---
 **Template Version:** 2.0 (3-layer, embedded features)

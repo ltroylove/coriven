@@ -1136,7 +1136,7 @@ Phase numbering follows the **2026-06-20 unified vision** (the later, more compl
 ### 17.7 Phase 6 — Productization (Epic 8)
 
 **Goal:** Multi-user, subscription billing, self-serve onboarding.
-**Build:** Stripe subscriptions (via MealPrepForge DBA) + `subscription_tier`; tier enforcement middleware; entity-cap upgrade prompt; pricing page; $199 lifetime + 7-day no-CC trial flows; 4-step onboarding wizard; PWA (service worker, Web Push); **Tauri Mac build + code-signing/notarization + release CI** (deferred here from Epic 6, which shipped Windows-first/unsigned — ADR-014); PKCE OAuth for the tray (replaces the disk-persisted session); (Capacitor mobile if demand).
+**Build:** Stripe subscriptions (via MealPrepForge DBA) + `subscription_tier`; tier enforcement middleware; entity-cap upgrade prompt; pricing page; $199 lifetime + 7-day no-CC trial flows; 4-step onboarding wizard; PWA (service worker, Web Push); **desktop distribution (Epic 8 Feature 8.6): code-signed Windows installer + Mac build/notarization + release CI + a `/download` page in the web app + auto-update** (the Epic 6 tray shipped Windows-first/unsigned — ADR-014); PKCE OAuth for the tray (replaces the disk-persisted session); (Capacitor mobile if demand).
 **Acceptance:** new user completes onboarding with a first goal + task; free user sees the upgrade prompt at entity #10; mobile Web Push reminder fires.
 
 ### 17.8 Cross-Cutting — Behavioral-Constraint Layer (Conditional)
