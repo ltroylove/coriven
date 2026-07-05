@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server'
-import { createAuthServerClient } from '@/lib/supabase/auth-server'
+import { type NextRequest, NextResponse } from 'next/server'
+import { createApiServerClient } from '@/lib/supabase/api-server'
 import type { PendingApprovalsResponse } from '@personal-assistant/types'
 
 /**
@@ -16,9 +16,9 @@ import type { PendingApprovalsResponse } from '@personal-assistant/types'
  * Empty queue → 200 { count: 0, items: [] }  (NOT 404 — tray poller must not
  * need a 404 special-case; "nothing pending" is data, not absence).
  */
-export async function GET(): Promise<NextResponse<PendingApprovalsResponse | { error: string }>> {
-  // 1. Authenticate — RLS-scoped client; no user → 401
-  const supabase = await createAuthServerClient()
+export async function GET(request: NextRequest): Promise<NextResponse<PendingApprovalsResponse | { error: string }>> {
+  // 1. Authenticate — Bearer token (tray) or cookie session (browser); no user → 401
+  const supabase = await createApiServerClient(request)
   const {
     data: { user },
     error: authError,

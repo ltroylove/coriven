@@ -35,7 +35,17 @@ export async function middleware(request: NextRequest) {
   const isApiAuthRoute = pathname.startsWith('/api/auth')
   const isPublicPage = pathname === '/'
 
+  // API requests carrying a Bearer token must NOT be redirected to /signin.
+  // The route handler validates the JWT and returns 401 when invalid.
+  // Redirecting to HTML sign-in for a machine client is always wrong.
+  const isApiRoute = pathname.startsWith('/api/')
+  const hasBearerToken = request.headers.get('Authorization')?.startsWith('Bearer ') ?? false
+
   if (!user && !isAuthRoute && !isApiAuthRoute && !isPublicPage) {
+    if (isApiRoute && hasBearerToken) {
+      // Let the route handler validate the token and return 401 if needed.
+      return supabaseResponse
+    }
     const url = request.nextUrl.clone()
     url.pathname = '/signin'
     url.searchParams.set('next', pathname)

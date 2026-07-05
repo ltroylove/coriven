@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Module mocks — declared before any imports so vi.mock hoisting works.
 // ---------------------------------------------------------------------------
 
-vi.mock('@/lib/supabase/auth-server', () => ({
-  createAuthServerClient: vi.fn(),
+vi.mock('@/lib/supabase/api-server', () => ({
+  createApiServerClient: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -13,7 +13,7 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 import { GET } from '../route'
-import { createAuthServerClient } from '@/lib/supabase/auth-server'
+import { createApiServerClient } from '@/lib/supabase/api-server'
 import { createServiceClient } from '@/lib/supabase/server'
 
 // ---------------------------------------------------------------------------
@@ -56,8 +56,17 @@ function buildAuthClientMock(user: { id: string } | null) {
   }
 }
 
+/** Build a NextRequest-like object with optional Authorization header. */
+function makeRequest(options: { bearerToken?: string } = {}) {
+  const headers = new Headers()
+  if (options.bearerToken) {
+    headers.set('Authorization', `Bearer ${options.bearerToken}`)
+  }
+  return new Request('http://localhost/api/tasks/due', { headers })
+}
+
 // Typed references to the vi.mocked factories.
-const mockCreateAuthServerClient = vi.mocked(createAuthServerClient)
+const mockCreateApiServerClient = vi.mocked(createApiServerClient)
 const mockCreateServiceClient = vi.mocked(createServiceClient)
 
 // ---------------------------------------------------------------------------
@@ -94,32 +103,80 @@ beforeEach(() => {
 })
 
 describe('GET /api/tasks/due', () => {
-  // (a) unauthenticated request
+  // (a) unauthenticated request (cookie path, no user)
   describe('unauthenticated request', () => {
     it('returns 401 when no user is found in the session', async () => {
-      mockCreateAuthServerClient.mockResolvedValue(
+      mockCreateApiServerClient.mockResolvedValue(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         buildAuthClientMock(null) as any,
       )
 
-      const response = await GET()
+      const response = await GET(makeRequest() as never)
       expect(response.status).toBe(401)
       const body = await response.json()
       expect(body).toEqual({ error: 'Unauthorized' })
     })
   })
 
-  // (b) authed user with due reminders
-  describe('authed user with due reminders', () => {
-    it('returns 200 with reminder rows from task_reminders', async () => {
+  // (b) Bearer token path — valid token authenticates
+  describe('Bearer token path', () => {
+    it('authenticates via Bearer token and returns 200 with reminders', async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockCreateAuthServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
       mockCreateServiceClient.mockReturnValue(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         buildServiceClientMock({ data: [BASE_REMINDER], error: null }) as any,
       )
 
-      const response = await GET()
+      const response = await GET(makeRequest({ bearerToken: 'valid-jwt' }) as never)
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(Array.isArray(body)).toBe(true)
+      expect(body).toHaveLength(1)
+      expect(body[0].id).toBe('rem-1')
+      // Verify createApiServerClient was called with the request
+      expect(mockCreateApiServerClient).toHaveBeenCalledOnce()
+    })
+
+    it('returns 401 when Bearer token is invalid (getUser returns null)', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock(null) as any)
+
+      const response = await GET(makeRequest({ bearerToken: 'invalid-token' }) as never)
+      expect(response.status).toBe(401)
+      const body = await response.json()
+      expect(body).toEqual({ error: 'Unauthorized' })
+    })
+  })
+
+  // (c) cookie path (no Bearer) still works
+  describe('cookie session path', () => {
+    it('authenticates via cookie session and returns reminders', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
+      mockCreateServiceClient.mockReturnValue(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        buildServiceClientMock({ data: [BASE_REMINDER], error: null }) as any,
+      )
+
+      const response = await GET(makeRequest() as never)
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body).toHaveLength(1)
+    })
+  })
+
+  // (d) authed user with due reminders
+  describe('authed user with due reminders', () => {
+    it('returns 200 with reminder rows from task_reminders', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
+      mockCreateServiceClient.mockReturnValue(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        buildServiceClientMock({ data: [BASE_REMINDER], error: null }) as any,
+      )
+
+      const response = await GET(makeRequest() as never)
       expect(response.status).toBe(200)
       const body = await response.json()
       expect(Array.isArray(body)).toBe(true)
@@ -130,21 +187,21 @@ describe('GET /api/tasks/due', () => {
 
     it('queries the task_reminders table via .from("task_reminders")', async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockCreateAuthServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
       const serviceClient = buildServiceClientMock({ data: [BASE_REMINDER], error: null })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mockCreateServiceClient.mockReturnValue(serviceClient as any)
 
-      await GET()
+      await GET(makeRequest() as never)
       expect(serviceClient.from).toHaveBeenCalledWith('task_reminders')
     })
   })
 
-  // (c) reminders for done/cancelled tasks are excluded
+  // (e) reminders for done/cancelled tasks are excluded
   describe('done/cancelled task filtering', () => {
     it('excludes rows where the task join is null (done/cancelled filtered by DB)', async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockCreateAuthServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
       mockCreateServiceClient.mockReturnValue(
         buildServiceClientMock({
           data: [BASE_REMINDER, DONE_TASK_REMINDER],
@@ -153,7 +210,7 @@ describe('GET /api/tasks/due', () => {
         }) as any,
       )
 
-      const response = await GET()
+      const response = await GET(makeRequest() as never)
       expect(response.status).toBe(200)
       const body = await response.json()
       // The route's client-side .filter(r => r.task !== null) removes the null-task row.
@@ -163,12 +220,12 @@ describe('GET /api/tasks/due', () => {
 
     it('applies a .not() filter to exclude done/cancelled tasks at the DB level', async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockCreateAuthServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
       const serviceClient = buildServiceClientMock({ data: [], error: null })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mockCreateServiceClient.mockReturnValue(serviceClient as any)
 
-      await GET()
+      await GET(makeRequest() as never)
 
       const queryChain = serviceClient.from.mock.results[0].value as Record<
         string,
@@ -183,18 +240,18 @@ describe('GET /api/tasks/due', () => {
     })
   })
 
-  // (d) snoozed reminders are excluded
+  // (f) snoozed reminders are excluded
   describe('snoozed reminder filtering', () => {
     it('does not return snoozed reminders (excluded by DB .or() filter)', async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockCreateAuthServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
       // The DB excludes snoozed rows; mock returns only the non-snoozed one.
       mockCreateServiceClient.mockReturnValue(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         buildServiceClientMock({ data: [BASE_REMINDER], error: null }) as any,
       )
 
-      const response = await GET()
+      const response = await GET(makeRequest() as never)
       expect(response.status).toBe(200)
       const body = await response.json()
       expect(body).toHaveLength(1)
@@ -203,12 +260,12 @@ describe('GET /api/tasks/due', () => {
 
     it('applies an .or() filter with snoozed_until conditions on the query', async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockCreateAuthServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
       const serviceClient = buildServiceClientMock({ data: [], error: null })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       mockCreateServiceClient.mockReturnValue(serviceClient as any)
 
-      await GET()
+      await GET(makeRequest() as never)
 
       const queryChain = serviceClient.from.mock.results[0].value as Record<
         string,
@@ -225,7 +282,7 @@ describe('GET /api/tasks/due', () => {
   describe('error handling', () => {
     it('returns 500 when the service query returns an error', async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockCreateAuthServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
+      mockCreateApiServerClient.mockResolvedValue(buildAuthClientMock({ id: 'user-abc' }) as any)
       mockCreateServiceClient.mockReturnValue(
         buildServiceClientMock({
           data: null,
@@ -234,7 +291,7 @@ describe('GET /api/tasks/due', () => {
         }) as any,
       )
 
-      const response = await GET()
+      const response = await GET(makeRequest() as never)
       expect(response.status).toBe(500)
       const body = await response.json()
       expect(body).toEqual({ error: 'DB connection failed' })

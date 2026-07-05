@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createAuthServerClient } from '@/lib/supabase/auth-server'
+import { createApiServerClient } from '@/lib/supabase/api-server'
 import type { BriefingContent } from '@/lib/jobs/briefing'
 import type { Database } from '@/types/supabase'
 
@@ -10,8 +10,8 @@ interface BriefingResponse {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse<BriefingResponse | { error: string }>> {
-  // 1. Get authenticated user
-  const supabase = await createAuthServerClient()
+  // 1. Get authenticated user (Bearer token or cookie session)
+  const supabase = await createApiServerClient(request)
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {
