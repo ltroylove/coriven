@@ -3,10 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "description": "Coriven tray app — Tauri v2 thin shell (no business logic, no DB access)",
+  "type": "module",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "node scripts/bundle-deps.js && tauri build",
+    "bundle-deps": "node scripts/bundle-deps.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-autostart": "^2.5.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4"

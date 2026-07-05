@@ -4,17 +4,9 @@
 // THIN-SHELL CONSTRAINT (ADR-003, §13.2):
 // This binary is the entry point for the Coriven tray shell.
 // It contains NO database access, NO Supabase client, NO business logic.
-// All application logic is delegated to lib.rs (tray setup) and the backend API.
-
-use coriven_tray_lib::setup_tray;
+// All application logic is delegated to lib.rs (tray setup, command registration)
+// and the backend API.
 
 fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
-            setup_tray(app.handle())?;
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running Coriven tray application");
+    coriven_tray_lib::run();
 }

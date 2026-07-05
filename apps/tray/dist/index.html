@@ -2,9 +2,520 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Coriven</title>
+
+    <!-- Config: Supabase URL + anon key (injected at build time via bundle-deps.js).
+         The anon key is public by design — it is safe to ship in a desktop binary.
+         dist/config.js is gitignored; see dist/config.example.js for the template. -->
+    <script src="config.js"></script>
+
+    <!-- Supabase JS client (UMD bundle — no module bundler required) -->
+    <script src="vendor/supabase.js"></script>
+
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #0f0f0f;
+        color: #e8e8e8;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .card {
+        width: 100%;
+        max-width: 340px;
+        background: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        padding: 32px 28px;
+      }
+
+      .logo {
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .logo h1 {
+        font-size: 22px;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: -0.3px;
+      }
+      .logo p {
+        font-size: 13px;
+        color: #888;
+        margin-top: 4px;
+      }
+
+      /* ── Status panel (shown when signed in) ── */
+      #status-panel { display: none; text-align: center; }
+      #status-panel .signed-in-label {
+        font-size: 14px;
+        color: #4ade80;
+        margin-bottom: 8px;
+      }
+      #status-panel .user-id {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 24px;
+        word-break: break-all;
+      }
+
+      /* ── Sign-in form ── */
+      #sign-in-panel { display: none; }
+
+      label {
+        display: block;
+        font-size: 12px;
+        color: #999;
+        margin-bottom: 6px;
+        margin-top: 16px;
+      }
+      label:first-of-type { margin-top: 0; }
+
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        background: #111;
+        border: 1px solid #333;
+        border-radius: 8px;
+        color: #e8e8e8;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      input:focus { border-color: #555; }
+      input::placeholder { color: #555; }
+
+      .error-msg {
+        font-size: 12px;
+        color: #f87171;
+        margin-top: 10px;
+        min-height: 18px;
+        text-align: center;
+      }
+
+      button {
+        display: block;
+        width: 100%;
+        padding: 11px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s, background 0.15s;
+        margin-top: 20px;
+      }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .btn-primary { background: #2563eb; color: #fff; }
+      .btn-primary:not(:disabled):hover { background: #1d4ed8; }
+
+      .btn-secondary {
+        background: transparent;
+        color: #888;
+        border: 1px solid #333;
+        margin-top: 12px;
+      }
+      .btn-secondary:not(:disabled):hover { border-color: #555; color: #aaa; }
+
+      .btn-danger {
+        background: transparent;
+        color: #f87171;
+        border: 1px solid #3f1f1f;
+        margin-top: 12px;
+      }
+      .btn-danger:not(:disabled):hover { background: #1f0f0f; }
+
+      /* ── Loading spinner ── */
+      #loading-panel {
+        text-align: center;
+        color: #666;
+        font-size: 13px;
+      }
+
+      /* ── Offline/error banner ── */
+      #offline-banner {
+        display: none;
+        background: #2a1f00;
+        border: 1px solid #4a3800;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: 12px;
+        color: #fbbf24;
+        text-align: center;
+        margin-top: 16px;
+      }
+
+      .autostart-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 16px;
+        font-size: 12px;
+        color: #666;
+      }
+      .autostart-row span { color: #888; }
+      .toggle-link {
+        color: #4b9eff;
+        cursor: pointer;
+        background: none;
+        border: none;
+        font-size: 12px;
+        padding: 0;
+        margin: 0;
+        width: auto;
+        text-decoration: underline;
+      }
+      .toggle-link:hover { color: #7ab8ff; }
+    </style>
   </head>
   <body>
-    <!-- Coriven tray app: no primary window. This HTML is never shown. -->
+    <div class="card">
+      <div class="logo">
+        <h1>Coriven</h1>
+        <p>Personal assistant tray</p>
+      </div>
+
+      <!-- Loading / session-restore state -->
+      <div id="loading-panel">Checking session&hellip;</div>
+
+      <!-- Offline banner (shown when restore fails due to network) -->
+      <div id="offline-banner">
+        Unable to reach Supabase — working offline.<br />
+        Your session will restore when the network is available.
+      </div>
+
+      <!-- Signed-in state -->
+      <div id="status-panel">
+        <p class="signed-in-label">&#10003; Signed in</p>
+        <p class="user-id" id="display-user-id"></p>
+
+        <div class="autostart-row">
+          <span id="autostart-label">Autostart: checking&hellip;</span>
+          <button class="toggle-link" id="btn-toggle-autostart">toggle</button>
+        </div>
+
+        <button class="btn-danger" id="btn-sign-out">Sign Out</button>
+        <button class="btn-secondary" id="btn-close-window">Close</button>
+      </div>
+
+      <!-- Sign-in form -->
+      <div id="sign-in-panel">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@example.com" autocomplete="email" />
+
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+
+        <p class="error-msg" id="error-msg"></p>
+
+        <button class="btn-primary" id="btn-sign-in">Sign In</button>
+      </div>
+    </div>
+
+    <script>
+      // ── Tauri invoke bridge ────────────────────────────────────────────────
+      // Tauri v2 with withGlobalTauri: true injects window.__TAURI__
+      // The invoke function is at window.__TAURI__.core.invoke
+      function invoke(cmd, args) {
+        return window.__TAURI__.core.invoke(cmd, args || {});
+      }
+
+      // ── Config validation ─────────────────────────────────────────────────
+      if (!window.CORIVEN_CONFIG || !window.CORIVEN_CONFIG.supabaseUrl || !window.CORIVEN_CONFIG.supabaseAnonKey) {
+        document.getElementById('loading-panel').textContent =
+          'Configuration missing — copy dist/config.example.js to dist/config.js and fill in your Supabase URL and anon key.';
+        throw new Error('CORIVEN_CONFIG not set — see dist/config.example.js');
+      }
+
+      // ── Supabase client with custom storage adapter ───────────────────────
+      //
+      // SECURITY: The default Supabase storage (localStorage) is DISABLED.
+      // This adapter delegates ONLY the refresh token to the OS keychain via
+      // Tauri commands (secure_store / secure_load / secure_delete).
+      // The access token is held in memory by the Rust shell (notify_signed_in).
+      // Nothing is ever written to localStorage or any browser-persistent store.
+      //
+      // Key names the Supabase client will call on this adapter:
+      //   - "sb-<project-ref>-auth-token" — the full session JSON
+      //   - We store only the refresh_token field from this; the rest is discarded.
+
+      // In-memory map used for all non-refresh-token keys (access token, user info, etc.)
+      const memoryStore = new Map();
+
+      // The single keychain-backed key (all others go to memoryStore).
+      const REFRESH_TOKEN_STORAGE_KEY_SUFFIX = '-auth-token';
+
+      const customStorage = {
+        async getItem(key) {
+          if (key.endsWith(REFRESH_TOKEN_STORAGE_KEY_SUFFIX)) {
+            // Reconstruct a minimal session JSON from the keychain refresh token
+            // so Supabase can call refreshSession().
+            try {
+              const refreshToken = await invoke('secure_load');
+              if (!refreshToken) return null;
+              // Return a minimal session blob — Supabase only needs refresh_token
+              // to call getSession() / refreshSession().
+              return JSON.stringify({ refresh_token: refreshToken });
+            } catch (e) {
+              console.error('[coriven-tray] secure_load failed:', e.message || e);
+              return null;
+            }
+          }
+          return memoryStore.get(key) ?? null;
+        },
+
+        async setItem(key, value) {
+          if (key.endsWith(REFRESH_TOKEN_STORAGE_KEY_SUFFIX)) {
+            // SECURITY: Extract only the refresh token from the session blob.
+            // The full session (including access token) must NOT be persisted.
+            try {
+              const session = JSON.parse(value);
+              if (session && session.refresh_token) {
+                // SECURITY: refresh token is passed to Rust — never logged here.
+                await invoke('secure_store', { value: session.refresh_token });
+              }
+            } catch (e) {
+              console.error('[coriven-tray] secure_store failed:', e.message || e);
+            }
+            // Do NOT store in memoryStore — the access token lives in Rust's AuthState.
+            return;
+          }
+          memoryStore.set(key, value);
+        },
+
+        async removeItem(key) {
+          if (key.endsWith(REFRESH_TOKEN_STORAGE_KEY_SUFFIX)) {
+            try {
+              await invoke('secure_delete');
+            } catch (e) {
+              console.error('[coriven-tray] secure_delete failed:', e.message || e);
+            }
+            return;
+          }
+          memoryStore.delete(key);
+        },
+      };
+
+      // Create the Supabase client with our custom storage adapter and persistence disabled
+      // at the client level (the adapter handles the one durable credential).
+      const { createClient } = window.supabase;
+      const supabaseClient = createClient(
+        window.CORIVEN_CONFIG.supabaseUrl,
+        window.CORIVEN_CONFIG.supabaseAnonKey,
+        {
+          auth: {
+            storage: customStorage,
+            persistSession: true,   // let the adapter control what is actually persisted
+            autoRefreshToken: true, // Supabase handles rotation; adapter re-persists via setItem
+            detectSessionInUrl: false,
+          },
+        }
+      );
+
+      // ── UI helpers ────────────────────────────────────────────────────────
+      function show(id) { document.getElementById(id).style.display = id === 'status-panel' ? 'block' : (id === 'loading-panel' ? 'block' : 'block'); }
+      function hide(id) { document.getElementById(id).style.display = 'none'; }
+      function setError(msg) { document.getElementById('error-msg').textContent = msg || ''; }
+
+      function showLoading() {
+        hide('sign-in-panel');
+        hide('status-panel');
+        show('loading-panel');
+      }
+      function showSignIn() {
+        hide('loading-panel');
+        hide('status-panel');
+        show('sign-in-panel');
+        setError('');
+      }
+      function showSignedIn(userId) {
+        hide('loading-panel');
+        hide('sign-in-panel');
+        show('status-panel');
+        document.getElementById('display-user-id').textContent = userId || '';
+        updateAutostartLabel();
+      }
+
+      // ── Autostart label / toggle ──────────────────────────────────────────
+      async function updateAutostartLabel() {
+        try {
+          const enabled = await invoke('plugin:autostart|is_enabled');
+          const label = document.getElementById('autostart-label');
+          label.textContent = enabled ? 'Autostart: On' : 'Autostart: Off';
+          document.getElementById('btn-toggle-autostart').textContent = enabled ? 'Disable' : 'Enable';
+        } catch (e) {
+          document.getElementById('autostart-label').textContent = 'Autostart: unknown';
+        }
+      }
+
+      document.getElementById('btn-toggle-autostart').addEventListener('click', async () => {
+        try {
+          const enabled = await invoke('plugin:autostart|is_enabled');
+          if (enabled) {
+            await invoke('plugin:autostart|disable');
+          } else {
+            await invoke('plugin:autostart|enable');
+          }
+          await updateAutostartLabel();
+        } catch (e) {
+          console.error('[coriven-tray] autostart toggle failed:', e.message || e);
+        }
+      });
+
+      // ── Auth lifecycle ────────────────────────────────────────────────────
+
+      // Notify the Rust shell of the current session state.
+      // SECURITY: Only user_id is sent; access_token is sent once and not logged.
+      async function notifyRust(session) {
+        if (session) {
+          await invoke('notify_signed_in', {
+            // SECURITY: access_token is passed to Rust memory; not logged.
+            accessToken: session.access_token,
+            userId: session.user.id,
+          });
+        } else {
+          await invoke('notify_signed_out');
+        }
+      }
+
+      // Sign in with email + password.
+      async function signIn(email, password) {
+        const btn = document.getElementById('btn-sign-in');
+        btn.disabled = true;
+        setError('');
+        try {
+          const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (error) {
+            // SECURITY: error.message from Supabase never contains credentials.
+            setError(error.message || 'Sign-in failed. Please try again.');
+            return;
+          }
+          await notifyRust(data.session);
+
+          // Enable autostart on first successful sign-in.
+          try {
+            const isEnabled = await invoke('plugin:autostart|is_enabled');
+            if (!isEnabled) {
+              await invoke('plugin:autostart|enable');
+              console.log('[coriven-tray] Autostart enabled after first sign-in');
+            }
+          } catch (e) {
+            console.error('[coriven-tray] Failed to enable autostart:', e.message || e);
+          }
+
+          showSignedIn(data.session.user.id);
+        } catch (e) {
+          setError('Unexpected error — please try again.');
+          console.error('[coriven-tray] signIn error:', e.message || e);
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      // Sign out: clear Supabase session + keychain credential + Rust auth state.
+      async function signOut() {
+        const btn = document.getElementById('btn-sign-out');
+        btn.disabled = true;
+        try {
+          await supabaseClient.auth.signOut();
+          // The Supabase client calls customStorage.removeItem() which calls secure_delete.
+          // Also explicitly notify Rust to clear in-memory token.
+          await invoke('notify_signed_out');
+          showSignIn();
+        } catch (e) {
+          console.error('[coriven-tray] signOut error:', e.message || e);
+          // Still show sign-in on error — don't leave the user stuck.
+          showSignIn();
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      // Try to restore a session silently on startup.
+      // Reads the refresh token from the OS keychain (via the custom storage adapter)
+      // and calls getSession() which will refresh if needed.
+      async function restoreSession() {
+        showLoading();
+        try {
+          await invoke('notify_restore_pending');
+          const { data, error } = await supabaseClient.auth.getSession();
+          if (error) {
+            console.error('[coriven-tray] Session restore error:', error.message);
+            // Treat any restore error as revoked/expired — clear credential and prompt.
+            await invoke('secure_delete');
+            await invoke('notify_signed_out');
+            showSignIn();
+            return;
+          }
+          if (data.session) {
+            await notifyRust(data.session);
+            showSignedIn(data.session.user.id);
+          } else {
+            // No stored refresh token — show sign-in.
+            await invoke('notify_signed_out');
+            showSignIn();
+          }
+        } catch (e) {
+          // Network error or Tauri bridge error — show offline banner + sign-in.
+          console.error('[coriven-tray] Session restore exception:', e.message || e);
+          document.getElementById('offline-banner').style.display = 'block';
+          await invoke('notify_signed_out').catch(() => {});
+          showSignIn();
+        }
+      }
+
+      // ── Supabase auth state listener ──────────────────────────────────────
+      // Handles token rotation: when Supabase rotates the refresh token, the
+      // custom storage adapter's setItem() is called and re-persists the new token.
+      supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'TOKEN_REFRESHED' && session) {
+          // Token rotation — the adapter's setItem() already persisted the new
+          // refresh token. Just keep Rust's in-memory access token current.
+          await invoke('notify_signed_in', {
+            accessToken: session.access_token,
+            userId: session.user.id,
+          }).catch(() => {});
+        } else if (event === 'SIGNED_OUT') {
+          await invoke('notify_signed_out').catch(() => {});
+        }
+      });
+
+      // ── Wire up button events ─────────────────────────────────────────────
+      document.getElementById('btn-sign-in').addEventListener('click', () => {
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        if (!email || !password) {
+          setError('Please enter your email and password.');
+          return;
+        }
+        signIn(email, password);
+      });
+
+      document.getElementById('password').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') document.getElementById('btn-sign-in').click();
+      });
+
+      document.getElementById('btn-sign-out').addEventListener('click', signOut);
+
+      document.getElementById('btn-close-window').addEventListener('click', () => {
+        // Close the sign-in window — tray icon stays active.
+        window.__TAURI__.window.getCurrentWindow().close().catch(() => {});
+      });
+
+      // ── Startup ───────────────────────────────────────────────────────────
+      // On DOMContentLoaded, try to restore a session from the keychain.
+      document.addEventListener('DOMContentLoaded', () => {
+        restoreSession();
+      });
+    </script>
   </body>
 </html>

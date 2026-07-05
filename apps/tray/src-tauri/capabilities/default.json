@@ -1,10 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the Coriven tray app (tray-only, no windows).",
+  "description": "Default capability for the Coriven tray app.",
   "platforms": ["linux", "macOS", "windows"],
-  "windows": [],
+  "windows": ["sign-in"],
   "permissions": [
-    "opener:default"
+    "opener:default",
+    "core:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
   ]
 }

@@ -19,6 +19,11 @@ tauri-build = { version = "2.6", features = [] }
 [dependencies]
 tauri = { version = "2.11", features = ["tray-icon"] }
 tauri-plugin-opener = "2.5"
+# Wave 6.1.2: autostart — official Tauri v2 plugin (cross-platform, no hand-rolled registry code)
+tauri-plugin-autostart = "2.5"
+# Wave 6.1.2: secure token storage — wraps Windows Credential Manager (and platform equivalents)
+# The refresh token is the only credential-at-rest; it NEVER touches a plaintext file or log.
+keyring = { version = "4.1", features = ["windows-native-keyring-store"] }
 png = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
