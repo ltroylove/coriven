@@ -48,6 +48,16 @@ impl AuthState {
             user_id: None,
         }))
     }
+
+    /// Return the current session for the poll loop: status + access token (if signed in).
+    ///
+    /// # Security
+    /// The access token is returned only when status is `SignedIn`. The token is
+    /// never logged by this method — the caller must not log it either.
+    pub fn get_session(&self) -> Result<(AuthStatus, Option<String>), String> {
+        let inner = self.0.lock().map_err(|_| "auth state lock poisoned".to_string())?;
+        Ok((inner.status.clone(), inner.access_token.clone()))
+    }
 }
 
 /// Public view of auth state returned to the webview (no token included).

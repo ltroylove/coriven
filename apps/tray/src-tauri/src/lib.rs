@@ -1,12 +1,17 @@
 // THIN-SHELL CONSTRAINT (ADR-003, §13.2):
 // This app contains NO database client, NO Supabase data access, NO recurrence math,
 // NO "what's due" logic, and NO business rules. It only: shows a tray icon, manages
-// auth lifecycle (Wave 6.1.2), and opens the web app in a browser.
+// auth lifecycle (Wave 6.1.2), polls the backend for due reminders (Wave 6.2.1),
+// and fires native Windows toasts.
 // All durable logic lives in the backend API.
 // Violations of this constraint are a review-gate failure.
 
 pub mod auth;
+pub mod notify;
+pub mod poll;
 pub mod secure_store;
+
+use std::sync::{Arc, Mutex};
 
 use tauri::{
     image::Image,
@@ -21,8 +26,18 @@ use auth::{auth_status, notify_restore_pending, notify_signed_in, notify_signed_
 use secure_store::{secure_delete, secure_load, secure_store};
 
 /// Entry point called from main.rs.
-/// Sets up plugins, commands, managed state, and the tray icon.
+/// Sets up plugins, commands, managed state, the tray icon, and the poll loop.
 pub fn run() {
+    // Build a Tokio runtime for the background poll loop. The runtime is kept
+    // alive for the lifetime of the process — it is NOT dropped on setup exit.
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("failed to build Tokio runtime for poll loop");
+    // Enter the runtime so Tauri's async tasks (if any) can also use it.
+    let _rt_guard = rt.enter();
+
     tauri::Builder::default()
         // Wave 6.1.2: autostart plugin — registers with Windows Task Scheduler /
         // Registry (via the auto-launch crate). MacosLauncher::LaunchAgent is used
@@ -33,6 +48,9 @@ pub fn run() {
             None, // no extra CLI args on autostart launch
         ))
         .plugin(tauri_plugin_opener::init())
+        // Wave 6.2.1: notification plugin — native Windows toast delivery.
+        // Action buttons are not used in this wave (Wave 6.2.2 adds them).
+        .plugin(tauri_plugin_notification::init())
         // Wave 6.1.2: secure-storage + auth commands exposed to the webview.
         // These are the ONLY paths through which the refresh token is stored or loaded.
         .invoke_handler(tauri::generate_handler![
@@ -50,6 +68,14 @@ pub fn run() {
         .manage(auth::AuthState::new())
         .setup(|app| {
             setup_tray(app.handle())?;
+
+            // Wave 6.2.1: start the background poll loop.
+            // The loop reads the API base URL from the environment (same source as
+            // `web_app_url()`) so local dev and production use consistent config.
+            let api_base_url = web_app_url();
+            let poll_state = Arc::new(Mutex::new(poll::PollState::new(api_base_url)));
+            poll::start_poll_loop(app.handle().clone(), poll_state);
+
             Ok(())
         })
         .run(tauri::generate_context!())
