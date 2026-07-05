@@ -2,16 +2,16 @@
 preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-06-29"
-lastupdated: "2026-06-29T00:00:00"
+lastupdated: "2026-07-05T00:00:00"
 version: "1.0"
 type: epic
 status: Planning
 domain: implementation
 product:
   - "coriven"
-epic: "7"
+epic: "8"
 priority: "Medium"
-branch: "epic/7-productization"
+branch: "epic/8-productization"
 architecture: ["ADR-011"]
 tags: [coriven, billing, stripe, tiers, pwa, onboarding]
 relateddocuments:
@@ -19,10 +19,10 @@ relateddocuments:
   - "docs/architecture/_main/03-Business-Requirements.md"
 ---
 
-# Epic 7: Productization
+# Epic 8: Productization
 
 ## Epic Overview
-- **Epic ID:** Epic-7
+- **Epic ID:** Epic-8
 - **Status:** Planning
 - **Duration:** Large
 - **Team:** Solo (owner/developer)
@@ -55,41 +55,41 @@ A new user can self-serve onboard, hit a contextual upgrade prompt at the value 
 ### Out of Scope
 - Capacitor native iOS/Android (only if PWA usage shows demand — blueprint §15).
 - Team/shared contexts (`org_id`) — blueprint §18.8.
-- Tauri Mac build, if not already completed in Epic 1 (track here if deferred).
+- Tauri **Mac build + code-signing/notarization + release CI** — deferred here from Epic 6 (which shipped Windows-first, unsigned local; see ADR-014). Track and complete in this epic (or sooner if Mac demand arises).
 
 ## Features & Waves
 
 > Waves finalized in `/design-waves`.
 
-### Feature 7.1: Stripe Billing & Tiers
+### Feature 8.1: Stripe Billing & Tiers
 - **Scope:** Stripe subscriptions through the MealPrepForge account as a second product line; `subscription_tier` (free/core/pro); webhooks; billing self-management.
 - **Key Technical Approach:** Stripe Checkout + webhook (idempotent) updating `profiles.subscription_tier`; `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` via env. Annual = 2 months free. See blueprint §16.
 - **Requirements:** Business Requirements Feature 9, UC-14; Vision §16.3 tiers.
 - **Dependencies:** Epic 1 (deploy + secrets).
 - **Wave Planning:** Checkout wave + webhook wave.
 
-### Feature 7.2: Tier Enforcement Middleware
+### Feature 8.2: Tier Enforcement Middleware
 - **Scope:** Enforce caps before tool execution / page access: entity cap (Free 10), reminder cap (Free 1/day), memory window (Free 24h / Core 7d / Pro 30d), tray scope.
 - **Key Technical Approach:** Middleware checks `subscription_tier` before entity/reminder creation and page access; **memory window enforced at retrieval** by filtering memory age (Plan §19.6), degrading gracefully (older memories stop surfacing — not an error). See Architecture §"Authentication & Authorization."
 - **Requirements:** Business Requirements Feature 9, UC-22/UC-23/UC-24; data governance (retention by tier).
-- **Dependencies:** Feature 7.1; Epic 2 (memory window targets the retrieval path).
+- **Dependencies:** Feature 8.1; Epic 2 (memory window targets the retrieval path).
 - **Wave Planning:** Enforcement wave + memory-window wave.
 
-### Feature 7.3: Conversion UX (Prompts, Pricing, Trial)
+### Feature 8.3: Conversion UX (Prompts, Pricing, Trial)
 - **Scope:** Contextual upgrade prompt at the entity/reminder cap; pricing page; $199 lifetime (first 200) + 7-day Core trial with **no credit card at signup** (trial triggers contextually at the cap).
 - **Key Technical Approach:** Cap-hit detection surfaces the prompt at the value moment ("Coriven can't remember anyone else"); trial flow defers payment. See Vision §16.4–16.5; UX error/cap handling.
 - **Requirements:** Business Requirements Feature 9; Vision §16.
 - **Dependencies:** Features 7.1, 7.2.
 - **Wave Planning:** Prompt wave + pricing/trial wave.
 
-### Feature 7.4: Onboarding Wizard
+### Feature 8.4: Onboarding Wizard
 - **Scope:** A 4-step wizard that ends with the user creating a first goal + task (zero-documentation first-run per UX Foundations Pass 6).
 - **Key Technical Approach:** Guided flow reusing goal/task forms; suggested actions; lands on Today/Chat. See UX §"First-time user" flow.
 - **Requirements:** Business Requirements UC-19; UX Foundations Pass 6.
 - **Dependencies:** Epic 4 (goals exist).
 - **Wave Planning:** One wave.
 
-### Feature 7.5: PWA & Web Push
+### Feature 8.5: PWA & Web Push
 - **Scope:** Service worker, Web Push (Android Chrome + iOS Safari 16.4+), add-to-home, offline context cache — the mobile delivery surface.
 - **Key Technical Approach:** Same backend; delivery shell changes (blueprint §15). Web Push replaces the tray on mobile. See Architecture §"Platform Strategy" / blueprint §15.
 - **Requirements:** Business Requirements Feature 9 (PWA); Vision roadmap V3.

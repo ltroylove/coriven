@@ -1097,7 +1097,7 @@ Phase numbering follows the **2026-06-20 unified vision** (the later, more compl
 
 **Goal:** Running, deployed, used daily.
 **Built:** monorepo, Supabase schema + RLS, auth, task CRUD + UI, chat engine with tool use, tool-permission toggles, reminders-merged-into-tasks, Windows tray daemon.
-**Remaining:** confirm `/api/tasks/due` correctness end-to-end; Vercel production deploy + env vars; **replace the Node.js tray daemon with a Tauri (Windows + Mac) thin-shell app — §13** (decided 2026-06-24); remove `apps/tray` (Node.js) once Tauri reaches parity.
+**Remaining:** confirm `/api/tasks/due` correctness end-to-end; Vercel production deploy + env vars. (The Node.js tray daemon was **removed** — ADR-012; the Tauri tray is now its own scheduled effort, **Epic 6** — §17.5.)
 **Acceptance:** create a task with a reminder 2 min out → within 5 min a Windows toast fires with the browser closed → Snooze/Dismiss work.
 
 ### 17.2 Phase 2 — Persistent Memory
@@ -1120,19 +1120,26 @@ Phase numbering follows the **2026-06-20 unified vision** (the later, more compl
 **Integration architecture (ADR-013, revised 2026-07-04 after research validation):** **Self-hosted Nango** owns all OAuth flows and token storage — multi-tenant, no raw tokens in Coriven's DB, keeps the Gmail data path inside our CASA assessment boundary. **Direct provider API calls** (Gmail, Outlook, Google Calendar) for read path (poll/fetch) and write path (approved actions). **Long-tail connectors deferred to a dedicated post-validation epic** — Zapier Embed ruled out as primary (user-pays economics); future candidates Composio/Pipedream Connect behind an MCP-shaped swappable interface; banking via Plaid/Teller regardless. Approval UI must show raw action payloads (never only an LLM summary); egress allowlist on model output; `gmail.readonly` may launch before `gmail.send`. Google CASA (~$1–5K/yr) exempt under 100 Gmail users — budget at productization.
 **Acceptance:** connect Gmail via Nango → emails classified within 15 min → "draft a reply to Sarah declining" → appears in approvals (raw payload visible) → approve → sent. Meeting-prep toast 15 min before an event. Untrusted email content never triggers an action (explicit test).
 
-### 17.5 Phase 5 — Proactive Intelligence
+### 17.5 Tauri Tray — Desktop Delivery (Epic 6)
+
+**Goal:** Reach the user on the desktop without a browser open — the delivery surface that makes Coriven proactive. Sequenced **before** Proactive Intelligence so its nudges/patterns/weekly-review have somewhere to fire.
+**Build:** new `apps/tray/` Tauri app (thin shell — no business logic, per ADR-003/§13); Supabase auth with the refresh token in Tauri secure storage; autostart; native tray icon + menu; poll/fire loop over `/api/tasks/due` (reminders + Snooze/Dismiss), `/api/briefing/today` (daily briefing), and a **new** `/api/approvals/pending` (approval alerts → deep-link to web `/approvals`). **Windows-first, unsigned local build now**; Mac build + code-signing + release CI deferred to Productization (ADR-014). Only one new backend artifact required (`/api/approvals/pending`); reminder/snooze/briefing endpoints already exist.
+**Acceptance:** task with a reminder 2 min out → within ~5 min a native Windows toast fires **with the browser closed** → Snooze/Dismiss work; briefing + pending-approval notifications fire; app autostarts as a tray icon; no DB access or recurrence math in the shell.
+
+### 17.6 Phase 5 — Proactive Intelligence (Epic 7)
 
 **Goal:** The assistant initiates.
 **Build:** `detected_patterns`; nightly pattern detection; stale-goal nudges; Friday weekly review; cross-context queries ("what's been happening with my gym project?" pulls email + tasks + memory); proactive tools.
+**Delivery:** depends on Epic 6 (the tray) as the desktop notification surface — without it, proactive events land only in the web app / daily briefing.
 **Acceptance:** stop completing a goal's tasks for 7 days → get a nudge. Friday 5pm → accurate weekly review.
 
-### 17.6 Phase 6 — Productization
+### 17.7 Phase 6 — Productization (Epic 8)
 
 **Goal:** Multi-user, subscription billing, self-serve onboarding.
-**Build:** Stripe subscriptions (via MealPrepForge DBA) + `subscription_tier`; tier enforcement middleware; entity-cap upgrade prompt; pricing page; $199 lifetime + 7-day no-CC trial flows; 4-step onboarding wizard; PWA (service worker, Web Push); (the Tauri Windows+Mac tray already shipped in Phase 1 — §13); (Capacitor mobile if demand).
+**Build:** Stripe subscriptions (via MealPrepForge DBA) + `subscription_tier`; tier enforcement middleware; entity-cap upgrade prompt; pricing page; $199 lifetime + 7-day no-CC trial flows; 4-step onboarding wizard; PWA (service worker, Web Push); **Tauri Mac build + code-signing/notarization + release CI** (deferred here from Epic 6, which shipped Windows-first/unsigned — ADR-014); PKCE OAuth for the tray (replaces the disk-persisted session); (Capacitor mobile if demand).
 **Acceptance:** new user completes onboarding with a first goal + task; free user sees the upgrade prompt at entity #10; mobile Web Push reminder fires.
 
-### 17.7 Cross-Cutting — Behavioral-Constraint Layer (Conditional)
+### 17.8 Cross-Cutting — Behavioral-Constraint Layer (Conditional)
 
 If approved (§19), slots in after Phase 2 (it depends on the memory layer existing): `behavioral_constraints` table, user-authored constraint registry UI, engine-level pre-action check, optional post-generation violation detection. Could be a headline differentiator or a v2 feature — decision pending.
 
