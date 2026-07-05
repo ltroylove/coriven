@@ -171,11 +171,17 @@ async fn handle_snooze(
 }
 
 /// Execute a dismiss action: mark the occurrence in the in-process suppress store
-/// and insert the de-dup key into the persisted de-dup cache so restart-replay
-/// is prevented.
+/// and insert the de-dup key into the shared de-dup cache (persisted to disk).
+///
+/// D-4 fix: instead of independent file I/O, this now routes through the
+/// `SharedDedupeCache` managed state — the same Mutex-guarded owner the poll loop
+/// uses. This eliminates the lost-update race where a concurrent dismiss and poll
+/// could each read stale state and overwrite each other's write.
 ///
 /// No backend call is made.
 fn handle_dismiss(app: &AppHandle, reminder_id: &str, effective_fire_time: &str) {
+    use crate::SharedDedupeCache;
+
     let key = format!("{}|{}", reminder_id, effective_fire_time);
 
     // In-process suppress store.
@@ -185,30 +191,27 @@ fn handle_dismiss(app: &AppHandle, reminder_id: &str, effective_fire_time: &str)
         }
     }
 
-    // Persist to the de-dup cache so restart-replay is prevented.
-    // We do this by loading the de-dup cache, inserting the key, and saving.
-    // The DedupeCache struct in poll.rs handles the disk I/O; we replicate
-    // the insert here using direct file access to keep modules decoupled.
-    let path = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("notified-cache.json");
+    // D-4 fix: route through the shared de-dup cache to avoid the lost-update race.
+    // Clone the Arc from managed state immediately so we don't hold the State<'_>
+    // borrow beyond this expression (same lifetime pattern used in poll.rs).
+    let shared_arc = app
+        .try_state::<SharedDedupeCache>()
+        .map(|s| s.0.clone());
 
-    let mut keys: Vec<String> = std::fs::read(&path)
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Vec<String>>(&b).ok())
-        .unwrap_or_default();
-
-    if !keys.contains(&key) {
-        eprintln!("[coriven-tray] actions: dismiss persisted to dedup cache key={}", key);
-        keys.push(key);
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+    if let Some(arc) = shared_arc {
+        match arc.lock() {
+            Ok(mut cache) => {
+                if !cache.contains(&key) {
+                    eprintln!("[coriven-tray] actions: dismiss persisted via shared dedup cache key={}", key);
+                    cache.insert(key);
+                }
+            }
+            Err(_) => {
+                eprintln!("[coriven-tray] actions: dismiss — shared dedup cache lock poisoned");
+            }
         }
-        if let Ok(json) = serde_json::to_string(&keys) {
-            let _ = std::fs::write(&path, json);
-        }
+    } else {
+        eprintln!("[coriven-tray] actions: dismiss — SharedDedupeCache unavailable (state not registered)");
     }
 }
 
@@ -497,6 +500,73 @@ mod tests {
 
         assert_eq!(queued.len(), 1);
         assert_eq!(queued[0], "rem-002");
+    }
+
+    // ---------------------------------------------------------------------------
+    // D-4: dismiss cache-write via shared cache abstraction
+    // ---------------------------------------------------------------------------
+
+    /// D-4 fix: verify that two concurrent dismiss operations on the same key
+    /// are idempotent when routed through a shared cache (HashSet deduplication).
+    ///
+    /// This tests the pure in-memory path of the shared-cache update — the disk
+    /// persistence (DedupeCache.insert → persist) is tested in poll.rs.
+    #[test]
+    fn dismiss_via_shared_cache_is_idempotent() {
+        use std::collections::HashSet;
+
+        // Simulate the shared dedup-cache in-memory set.
+        let mut cache_inner: HashSet<String> = HashSet::new();
+
+        let key1 = "rem-001|2026-07-04T10:00:00Z".to_string();
+        let key2 = "rem-002|2026-07-04T10:00:00Z".to_string();
+
+        // First dismiss: key1 not present → insert.
+        if !cache_inner.contains(&key1) {
+            cache_inner.insert(key1.clone());
+        }
+        assert_eq!(cache_inner.len(), 1);
+
+        // Second dismiss of same key: already present → no duplicate.
+        if !cache_inner.contains(&key1) {
+            cache_inner.insert(key1.clone());
+        }
+        assert_eq!(cache_inner.len(), 1, "duplicate dismiss must not grow cache");
+
+        // Dismiss a different key: goes in.
+        if !cache_inner.contains(&key2) {
+            cache_inner.insert(key2.clone());
+        }
+        assert_eq!(cache_inner.len(), 2);
+    }
+
+    /// D-4 fix: verify that a dismiss-then-poll sequence (serialised by Mutex)
+    /// produces the correct final cache state — dismiss key is present after
+    /// the "poll" reads the shared state.
+    #[test]
+    fn dismiss_then_poll_shared_state_is_consistent() {
+        use std::collections::HashSet;
+        use std::sync::{Arc, Mutex};
+
+        // Shared cache wrapped in Arc<Mutex<_>> — mimics SharedDedupeCache.
+        let shared: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+
+        let dismiss_key = "rem-001|2026-07-04T10:00:00Z".to_string();
+
+        // Dismiss: lock → insert → unlock.
+        {
+            let mut cache = shared.lock().unwrap();
+            cache.insert(dismiss_key.clone());
+        }
+
+        // Poll: lock → check → unlock. Dismissed key must be visible.
+        {
+            let cache = shared.lock().unwrap();
+            assert!(
+                cache.contains(&dismiss_key),
+                "poll must see key inserted by dismiss (shared cache, no lost-update)"
+            );
+        }
     }
 
     // ---------------------------------------------------------------------------

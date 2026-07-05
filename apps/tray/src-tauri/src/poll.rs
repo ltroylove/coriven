@@ -324,46 +324,91 @@ async fn run_poll_cycle(app: &AppHandle, poll_state: &Arc<Mutex<PollState>>) {
         due_cache.is_offline
     );
 
-    // Load the persisted de-dup cache.
-    let mut cache = DedupeCache::load(app);
+    // D-4 fix: use the SharedDedupeCache managed state so the poll loop and dismiss
+    // share one Mutex-guarded owner. The lock-free-across-await pattern is used:
+    //   1. Clone the Arc from managed state (drops the State<'_> borrow).
+    //   2. Lock → do all reads/writes synchronously (no await) → unlock.
+    // No Mutex is held across any await point in this function.
+    //
+    // If SharedDedupeCache is unavailable (shouldn't happen in production), fall back
+    // to a fresh load so the cycle still fires rather than silently skipping.
+    let shared_cache_arc: Option<std::sync::Arc<std::sync::Mutex<DedupeCache>>> = app
+        .try_state::<crate::SharedDedupeCache>()
+        .map(|s| s.0.clone());
 
     // Build the set of live keys from this response (used for pruning).
     // When offline, we prune against the cached list (same reminders, stable set).
     let live_keys: HashSet<String> = reminders.iter().map(|r| dedup_key(r)).collect();
 
-    // Prune stale entries — removes keys absent from this response.
-    cache.prune(&live_keys);
+    // Collect notification decisions: lock once, read/write, unlock before any await.
+    let notifications_to_fire: Vec<(DueReminder, String)> = if let Some(ref arc) = shared_cache_arc {
+        match arc.lock() {
+            Ok(mut cache) => {
+                // Prune stale entries — removes keys absent from this response.
+                cache.prune(&live_keys);
+
+                let mut to_fire = Vec::new();
+                for reminder in &reminders {
+                    let key = dedup_key(reminder);
+                    if cache.contains(&key) {
+                        continue;
+                    }
+                    let fire_time_str = effective_fire_time(reminder).to_string();
+                    if !is_at_or_before_now(&fire_time_str) {
+                        continue;
+                    }
+                    to_fire.push((reminder.clone(), key));
+                }
+                to_fire
+            }
+            Err(_) => {
+                eprintln!("[coriven-tray] poll: shared dedup cache lock poisoned — skipping notification dispatch");
+                vec![]
+            }
+        }
+    } else {
+        // Fallback: load fresh (original behaviour, no shared state).
+        let mut cache = DedupeCache::load(app);
+        cache.prune(&live_keys);
+        let mut to_fire = Vec::new();
+        for reminder in &reminders {
+            let key = dedup_key(reminder);
+            if cache.contains(&key) {
+                continue;
+            }
+            let fire_time_str = effective_fire_time(reminder).to_string();
+            if !is_at_or_before_now(&fire_time_str) {
+                continue;
+            }
+            to_fire.push((reminder.clone(), key));
+        }
+        to_fire
+    };
 
     let mut fired = 0usize;
-    let mut suppressed = 0usize;
+    let suppressed = reminders.len().saturating_sub(notifications_to_fire.len());
 
-    for reminder in &reminders {
-        let key = dedup_key(reminder);
-
-        if cache.contains(&key) {
-            suppressed += 1;
-            continue;
-        }
-
-        // The only "due" decision the tray makes: is the effective fire time <= now?
-        // The API already returns only reminders due within 24h; this comparison is
-        // presentation timing, not a business rule.
-        let fire_time_str = effective_fire_time(reminder);
-        if !is_at_or_before_now(fire_time_str) {
-            // Future reminder within the 24h window — hold; do not notify yet.
-            continue;
-        }
-
+    for (reminder, key) in notifications_to_fire {
+        let fire_time_str = effective_fire_time(&reminder).to_string();
         let title = &reminder.task.title;
         let body = format!("Due: {}", fire_time_str);
         let meta = NotificationMeta {
             reminder_id: reminder.id.clone(),
-            effective_fire_time: fire_time_str.to_string(),
+            effective_fire_time: fire_time_str,
         };
 
         match dispatch_notification(app, title, &body, &meta) {
             Ok(()) => {
-                cache.insert(key);
+                // Lock, insert key, unlock — no await held.
+                if let Some(ref arc) = shared_cache_arc {
+                    if let Ok(mut cache) = arc.lock() {
+                        cache.insert(key);
+                    }
+                } else {
+                    // Fallback path: reload, insert, save (original behaviour).
+                    let mut cache = DedupeCache::load(app);
+                    cache.insert(key);
+                }
                 fired += 1;
             }
             Err(e) => {

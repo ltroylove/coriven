@@ -81,6 +81,12 @@ pub fn run() {
             // Wave 6.2.2: register action state (suppress store + snooze queue).
             app.manage(actions::ActionState::new(app.handle()));
 
+            // D-4 fix: register the shared de-dup cache so dismiss and the poll
+            // loop share a single Mutex-guarded owner — no more lost-update race.
+            let dedup_cache = poll::DedupeCache::load(app.handle());
+            let shared_dedup = Arc::new(Mutex::new(dedup_cache));
+            app.manage(SharedDedupeCache(shared_dedup.clone()));
+
             setup_tray(app.handle())?;
 
             // Wave 6.2.1: start the background poll loop.
@@ -102,6 +108,16 @@ pub fn run() {
 
 /// Wrapper so `Arc<Mutex<PollState>>` can be stored in Tauri managed state.
 pub struct SharedPollState(pub Arc<Mutex<poll::PollState>>);
+
+/// Shared de-dup cache — single owner for both the poll loop and dismiss actions.
+///
+/// D-4 fix: wrapping `DedupeCache` in a `Mutex` here prevents the lost-update race
+/// where `handle_dismiss` wrote to the cache file independently of the poll loop's
+/// in-memory `DedupeCache` copy. With this shared owner:
+///   - The poll loop locks, reads/writes, then unlocks (no lock held across await).
+///   - `handle_dismiss` locks, inserts the key, persists, then unlocks.
+/// These two operations are serialised by the Mutex, eliminating the race.
+pub struct SharedDedupeCache(pub Arc<Mutex<poll::DedupeCache>>);
 
 /// The Coriven web app base URL. Configurable for local dev vs production.
 /// Override by setting the CORIVEN_WEB_URL environment variable at runtime.
@@ -160,6 +176,35 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     // A future wave can update the menu item label dynamically via the tray handle.
     let snooze_item = MenuItem::with_id(app, "snooze_all", "Snooze All (1h)", true, None::<&str>)?;
 
+    // D-2 fix: "Due reminders…" is the PRIMARY reliable trigger for the picker.
+    // Toast-click callbacks are NOT available in tauri-plugin-notification v2.3.x on
+    // Windows desktop (the plugin uses notify-rust with no action handler surface).
+    // This tray menu item is always reachable regardless of toast-click reliability.
+    let due_reminders_item = MenuItem::with_id(
+        app,
+        "due_reminders",
+        "Due reminders\u{2026}",
+        true,
+        None::<&str>,
+    )?;
+
+    // D-2 fix: reliable tray-menu paths for briefing and approval deep-links.
+    // These replace the toast-click path (not reachable in this plugin version).
+    let open_today_item = MenuItem::with_id(
+        app,
+        "open_today",
+        "Today's briefing",
+        true,
+        None::<&str>,
+    )?;
+    let open_approvals_item = MenuItem::with_id(
+        app,
+        "open_approvals",
+        "Pending approvals",
+        true,
+        None::<&str>,
+    )?;
+
     let autostart_item = MenuItem::with_id(
         app,
         "toggle_autostart",
@@ -175,6 +220,9 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             &open_item,
             &sign_in_item,
             &sign_out_item,
+            &due_reminders_item,
+            &open_today_item,
+            &open_approvals_item,
             &snooze_item,
             &autostart_item,
             &quit_item,
@@ -203,6 +251,45 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 // Sign-out: the webview handles Supabase sign-out + secure_delete.
                 // Opening the window lets the user trigger sign-out from the UI.
                 open_sign_in_window(app);
+            }
+            "open_today" => {
+                // D-2 fix (reliable path): open the /today briefing page.
+                // Toast-click not available in tauri-plugin-notification v2.3.x;
+                // this tray-menu item is the primary path for the briefing deep-link.
+                let url = web_app_url();
+                crate::briefing::open_today_page(app, &url);
+            }
+            "open_approvals" => {
+                // D-2 fix (reliable path): open the /approvals page.
+                // Same rationale as open_today — toast-click is best-effort only.
+                let url = web_app_url();
+                crate::approvals::open_approvals_page(app, &url);
+            }
+            "due_reminders" => {
+                // D-2 fix (primary path): open picker for the first currently-due
+                // un-dismissed reminder, or all of them sequentially.
+                //
+                // Design rationale: The notification plugin on Windows desktop (v2.3.x)
+                // does not expose a click-callback API — toast clicks cannot reliably
+                // trigger Rust code in unsigned/unpackaged builds. This tray-menu item
+                // is therefore the PRIMARY trigger for the picker window. The toast
+                // fires a notification so the user knows something is due; the menu
+                // item provides the reliable action path.
+                //
+                // We open a picker for the first due, un-dismissed reminder from the
+                // last cached poll payload. If none are due, we log and do nothing.
+                let app_clone = app.clone();
+                let poll_state = app
+                    .try_state::<SharedPollState>()
+                    .map(|s| s.0.clone());
+
+                if let Some(ps) = poll_state {
+                    tokio::spawn(async move {
+                        open_due_reminder_picker(app_clone, ps);
+                    });
+                } else {
+                    eprintln!("[coriven-tray] tray: Due reminders — SharedPollState unavailable");
+                }
             }
             "snooze_all" => {
                 // Wave 6.2.2: snooze every currently due reminder by 60 minutes.
@@ -304,6 +391,52 @@ fn open_sign_in_window(app: &AppHandle) {
             eprintln!("[coriven-tray] Failed to open sign-in window: {e}");
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// D-2 fix: open picker for due reminders from the tray menu
+// ---------------------------------------------------------------------------
+
+/// Open the snooze/dismiss picker for the first currently-due, un-dismissed
+/// reminder from the cached poll payload. Called by the "Due reminders…" tray
+/// menu item — this is the PRIMARY reliable action path (see menu handler comment).
+///
+/// If multiple reminders are due, only the first is opened (the user can re-click
+/// the menu item after acting on each). This keeps the UI simple and avoids
+/// spawning many windows at once.
+///
+/// If no due reminders are cached, logs and returns without opening a window.
+fn open_due_reminder_picker(app: AppHandle, poll_state: Arc<Mutex<poll::PollState>>) {
+    let due_cache = crate::offline::DueCache::load(&app);
+
+    // Read dismissed keys from the suppress store.
+    let dismissed_keys: std::collections::HashSet<String> = app
+        .try_state::<actions::ActionState>()
+        .and_then(|s| s.suppress_store.lock().ok().map(|st| st.dismissed.clone()))
+        .unwrap_or_default();
+
+    // Find the first due, un-dismissed reminder.
+    let first_due = due_cache.reminders.into_iter().find(|r| {
+        let key = poll::dedup_key(r);
+        !dismissed_keys.contains(&key)
+    });
+
+    match first_due {
+        Some(reminder) => {
+            let effective_fire_time = poll::effective_fire_time(&reminder).to_string();
+            eprintln!(
+                "[coriven-tray] tray: opening picker for reminder_id={} (tray-menu trigger)",
+                reminder.id
+            );
+            notify::open_picker_window(&app, &reminder.id, &effective_fire_time);
+        }
+        None => {
+            eprintln!("[coriven-tray] tray: Due reminders — no due un-dismissed reminders cached");
+        }
+    }
+
+    // Suppress the unused variable warning for poll_state (kept for future multi-reminder support).
+    let _ = poll_state;
 }
 
 // ---------------------------------------------------------------------------
