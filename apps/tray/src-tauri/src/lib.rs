@@ -74,6 +74,8 @@ pub fn run() {
             reminder_action,
             // Wave 6.2.2: open picker window for a reminder (deep link from toast click)
             open_reminder_picker,
+            // Close the sign-in/status window from JS.
+            close_window,
         ])
         // Managed auth state — holds the in-memory access token (never persisted).
         .manage(auth::AuthState::new())
@@ -102,8 +104,15 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Coriven tray application");
+        .build(tauri::generate_context!())
+        .expect("error while building Coriven tray application")
+        .run(|_app, event| {
+            // Keep the process alive when all windows are closed — the tray icon
+            // is the app's presence. The Quit menu item calls app.exit(0) directly.
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }
 
 /// Wrapper so `Arc<Mutex<PollState>>` can be stored in Tauri managed state.
@@ -125,7 +134,7 @@ pub struct SharedDedupeCache(pub Arc<Mutex<poll::DedupeCache>>);
 ///
 /// Production usage: set CORIVEN_WEB_URL=https://your-app.vercel.app in the
 /// process environment before launching, or supply via a config file in a later wave.
-const DEFAULT_WEB_URL: &str = "http://localhost:3000";
+const DEFAULT_WEB_URL: &str = "https://coriven.app";
 
 /// Returns the configured web app URL. Reads CORIVEN_WEB_URL from the environment
 /// at runtime, falling back to the compiled-in default.
@@ -500,5 +509,14 @@ fn open_reminder_picker(
             );
             Err("malformed action payload".to_string())
         }
+    }
+}
+
+/// Close the sign-in/status window from the webview JS.
+/// Safer than calling the Tauri JS window API directly (avoids permission edge-cases).
+#[tauri::command]
+fn close_window(app: AppHandle) {
+    if let Some(win) = app.get_webview_window("sign-in") {
+        let _ = win.close();
     }
 }

@@ -354,13 +354,19 @@ async function signOut() {
 }
 
 // Try to restore a session silently on startup.
-// Reads the refresh token from the OS keychain (via the custom storage adapter)
-// and calls getSession() which will refresh if needed.
+// Loads the refresh token directly from the OS keychain and calls refreshSession()
+// explicitly — avoids relying on getSession() accepting the minimal storage shape.
 async function restoreSession() {
   showLoading();
   try {
     await invoke('notify_restore_pending');
-    var result = await supabaseClient.auth.getSession();
+    var refreshToken = await invoke('secure_load');
+    if (!refreshToken) {
+      await invoke('notify_signed_out');
+      showSignIn();
+      return;
+    }
+    var result = await supabaseClient.auth.refreshSession({ refresh_token: refreshToken });
     var data = result.data;
     var error = result.error;
     if (error) {
@@ -483,8 +489,8 @@ document.getElementById('password').addEventListener('keydown', function(e) {
 document.getElementById('btn-sign-out').addEventListener('click', signOut);
 
 document.getElementById('btn-close-window').addEventListener('click', function() {
-  // Close the sign-in window — tray icon stays active.
-  window.__TAURI__.window.getCurrentWindow().close().catch(function() {});
+  // Close the sign-in window via Rust command — tray icon stays active.
+  invoke('close_window').catch(function() {});
 });
 
 // ── Startup ───────────────────────────────────────────────────────────

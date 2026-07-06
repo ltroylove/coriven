@@ -668,7 +668,7 @@ impl std::fmt::Display for FetchError {
 /// This is the ONLY "due" comparison the tray performs — it is presentation
 /// timing, not a business rule. The API already decided which reminders to
 /// include in the response.
-fn is_at_or_before_now(fire_time: &str) -> bool {
+pub(crate) fn is_at_or_before_now(fire_time: &str) -> bool {
     // Parse the ISO-8601 string. If parsing fails, treat as not-due so we
     // never fire a notification based on garbage data.
     match chrono::DateTime::parse_from_rfc3339(fire_time) {

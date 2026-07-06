@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
-    "dev": "tauri dev",
+    "dev": "node scripts/bundle-deps.js && tauri dev",
     "build": "node scripts/bundle-deps.js && tauri build",
     "bundle-deps": "node scripts/bundle-deps.js"
   },

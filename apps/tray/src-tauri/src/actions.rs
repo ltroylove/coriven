@@ -315,6 +315,10 @@ pub async fn snooze_all(
         if dismissed_keys.contains(&key) {
             continue; // already dismissed this occurrence
         }
+        let fire_time = crate::poll::effective_fire_time(reminder).to_string();
+        if !crate::poll::is_at_or_before_now(&fire_time) {
+            continue; // not yet due — skip rather than snooze a future reminder
+        }
 
         match post_snooze(&api_base_url, &reminder.id, SNOOZE_60M, &token).await {
             SnoozeResult::Ok => {

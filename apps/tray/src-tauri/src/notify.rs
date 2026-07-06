@@ -36,9 +36,9 @@ pub struct NotificationMeta {
 
 /// Dispatch one native Windows toast for a due reminder.
 ///
-/// Wave 6.2.2: The notification identifier is set to the base64-encoded
-/// `{reminderId}|{effectiveFireTime}` so a notification click or tray-picker
-/// action can decode which reminder to act on.
+/// The WinRT notification has no custom identifier — the toast title/body are
+/// the only user-visible fields. Action routing (snooze/dismiss) is handled via
+/// the picker window; see `open_reminder_picker` and `encode_action_payload`.
 ///
 /// # Parameters
 /// - `app`: live Tauri app handle
@@ -77,8 +77,9 @@ pub fn dispatch_notification(
     Ok(())
 }
 
-/// Encode `{reminderId}|{effectiveFireTime}` as a URL-safe base64 string.
-/// Used as the notification identifier so the picker window can decode it.
+/// Encode `{reminderId}|{effectiveFireTime}` as a percent-encoded string.
+/// Used as the `payload` query parameter in the picker window URL so the JS
+/// side can decode which reminder to act on.
 ///
 /// Pure function — no I/O, testable without Tauri.
 pub fn encode_action_payload(reminder_id: &str, effective_fire_time: &str) -> String {

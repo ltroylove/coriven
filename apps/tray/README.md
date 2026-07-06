@@ -12,7 +12,7 @@ A Tauri v2 thin-shell desktop tray application for Coriven. Runs as a background
   - Install: https://rustup.rs
   - On this machine Rust is installed but NOT on the shell PATH. Use full paths:
     - `~/.cargo/bin/cargo` (Git Bash) or `$HOME\.cargo\bin\cargo` (PowerShell)
-  - Verify: `~/.cargo/bin/rustc --version` → `rustc 1.96.1` or later
+  - Verify: `~/.cargo/bin/rustc --version` → `rustc 1.77.2` or later
 - **Node.js / npm:** Already on PATH (used for the Tauri CLI wrapper)
 - **WebView2 Runtime (Windows):** Pre-installed on Windows 10 1803+ and Windows 11
 - **MSVC Build Tools:** Required by the `x86_64-pc-windows-msvc` Rust target

@@ -35,14 +35,15 @@ export async function middleware(request: NextRequest) {
   const isApiAuthRoute = pathname.startsWith('/api/auth')
   const isPublicPage = pathname === '/'
 
-  // API requests carrying a Bearer token must NOT be redirected to /signin.
-  // The route handler validates the JWT and returns 401 when invalid.
-  // Redirecting to HTML sign-in for a machine client is always wrong.
-  const isApiRoute = pathname.startsWith('/api/')
+  // Tray API routes that accept a Bearer token must NOT be redirected to /signin.
+  // Only these specific endpoints are called by the tray; other /api/* routes
+  // still require a browser session.
+  const TRAY_API_ROUTES = ['/api/tasks/due', '/api/briefing/today', '/api/approvals/pending']
+  const isTrayApiRoute = TRAY_API_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
   const hasBearerToken = request.headers.get('Authorization')?.startsWith('Bearer ') ?? false
 
   if (!user && !isAuthRoute && !isApiAuthRoute && !isPublicPage) {
-    if (isApiRoute && hasBearerToken) {
+    if (isTrayApiRoute && hasBearerToken) {
       // Let the route handler validate the token and return 401 if needed.
       return supabaseResponse
     }
