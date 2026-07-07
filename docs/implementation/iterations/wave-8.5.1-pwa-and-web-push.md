@@ -10,8 +10,8 @@ domain: implementation
 product:
   - coriven
 epic: "7"
-feature: "7.5"
-wave: "7.5.1"
+feature: "8.5"
+wave: "8.5.1"
 agents: []
 tags: [coriven, pwa, service-worker, web-push, vapid, offline, mobile, add-to-home]
 relateddocuments:
@@ -22,7 +22,7 @@ relateddocuments:
   - "docs/architecture/_main/05-User-Experience.md"
 ---
 
-# Wave 7.5.1: PWA and Web Push
+# Wave 8.5.1: PWA and Web Push
 
 ## Wave Overview
 
@@ -432,5 +432,5 @@ Parallelizable streams:
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` Feature 9
 - Architecture: `docs/architecture/_main/04-Architecture.md` §Platform Strategy, §Reliability
 - UX: `docs/architecture/_main/05-User-Experience.md` §Responsive Design (Mobile/PWA)
-- Epic 7: `docs/implementation/_main/epic-7-productization.md`
-- Wave 7.1.1: `docs/implementation/iterations/wave-7.1.1-stripe-billing-and-tiers.md`
+- Epic 8: `docs/implementation/_main/epic-7-productization.md`
+- Wave 8.1.1: `docs/implementation/iterations/wave-8.1.1-stripe-billing-and-tiers.md`

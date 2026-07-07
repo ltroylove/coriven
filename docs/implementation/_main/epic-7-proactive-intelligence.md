@@ -2,16 +2,16 @@
 preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-06-29"
-lastupdated: "2026-06-29T00:00:00"
+lastupdated: "2026-07-05T00:00:00"
 version: "1.0"
 type: epic
 status: Planning
 domain: implementation
 product:
   - "coriven"
-epic: "6"
+epic: "7"
 priority: "Medium"
-branch: "epic/6-proactive-intelligence"
+branch: "epic/7-proactive-intelligence"
 architecture: ["ADR-010"]
 tags: [coriven, proactive, patterns, weekly-review, cross-context]
 relateddocuments:
@@ -19,10 +19,10 @@ relateddocuments:
   - "docs/architecture/_main/04-Architecture.md"
 ---
 
-# Epic 6: Proactive Intelligence
+# Epic 7: Proactive Intelligence
 
 ## Epic Overview
-- **Epic ID:** Epic-6
+- **Epic ID:** Epic-7
 - **Status:** Planning
 - **Duration:** Medium
 - **Team:** Solo (owner/developer)
@@ -59,28 +59,28 @@ Coriven proactively surfaces useful signals the user didn't ask for, and can ans
 
 > Waves finalized in `/design-waves`.
 
-### Feature 6.1: Pattern Detection
+### Feature 7.1: Pattern Detection
 - **Scope:** Nightly analysis of task-completion history to identify habits and recurring blockers; store in `detected_patterns`; subtle tray notice on new detections.
 - **Key Technical Approach:** `lib/jobs/` nightly cron; pattern types (gym_days, weekly_review_time, stale_goal, follow_up_needed); `detect_patterns` tool exposes results to chat. See blueprint §12.1.
 - **Requirements:** Business Requirements Feature 8, UC-42.
 - **Dependencies:** Epic 4 (tasks/goals history); Epic 1 (cron).
 - **Wave Planning:** Detection-job wave + tool/notification wave.
 
-### Feature 6.2: Stale-Goal Nudges (Proactive Delivery)
+### Feature 7.2: Stale-Goal Nudges (Proactive Delivery)
 - **Scope:** Deliver proactive nudges for goals with no activity (14 days per §7.3; the 7-day acceptance scenario tests the surfacing path).
 - **Key Technical Approach:** Builds on Epic 4's momentum/stale computation; routes nudges via tray (`push_notification`). See blueprint §12.2.
 - **Requirements:** Business Requirements UC-40; proactive principle.
 - **Dependencies:** Epic 4 (Feature 4.3).
 - **Wave Planning:** One wave.
 
-### Feature 6.3: Weekly Review
+### Feature 7.3: Weekly Review
 - **Scope:** Friday 5pm structured week-in-review (wins, blockers, next-week focus) from task + goal history; stored as `daily_briefings` (type `weekly`); delivered via tray.
 - **Key Technical Approach:** Vercel Cron (`CRON_SECRET`); assembled from structured data (consistent with the deterministic-briefing approach, ADR-008) with optional light LLM phrasing for narrative. See blueprint §12.3.
 - **Requirements:** Business Requirements Feature 8, UC-38.
 - **Dependencies:** Epic 4.
 - **Wave Planning:** One wave.
 
-### Feature 6.4: Cross-Context Queries
+### Feature 7.4: Cross-Context Queries
 - **Scope:** Answer questions that span tasks, goals, memory, and email in one response.
 - **Key Technical Approach:** Chat engine composes context across stores (leverages Epic 2 memory + Epic 5 email metadata when present); no new storage. See blueprint §12 intro.
 - **Requirements:** Business Requirements Feature 8 (cross-context).
@@ -89,7 +89,7 @@ Coriven proactively surfaces useful signals the user didn't ask for, and can ans
 
 ## Dependencies
 
-**Prerequisites:** Epic 4 (goals/tasks history), Epic 1 (cron). Strong: Epic 2 (memory).
+**Prerequisites:** Epic 4 (goals/tasks history), Epic 1 (cron). Strong: Epic 2 (memory), **Epic 6 (Tauri tray — the desktop delivery surface for nudges/patterns/weekly review; without it these fire only into the web app / daily briefing)**.
 **Enables:** Mature proactivity; sets up the deferred demand-detection direction (§12.4).
 **External Dependencies:** Vercel Cron; (cross-context) Epic 5 data if connected.
 

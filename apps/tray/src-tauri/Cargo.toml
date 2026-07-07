@@ -1,0 +1,46 @@
+[package]
+name = "coriven-tray"
+version = "0.1.0"
+description = "Coriven tray app — thin shell over the API (no DB, no business logic)"
+edition = "2021"
+authors = ["Roy Love"]
+license = "MIT"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "coriven_tray_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.11", features = ["tray-icon"] }
+tauri-plugin-opener = "2.5"
+# Wave 6.1.2: autostart — official Tauri v2 plugin (cross-platform, no hand-rolled registry code)
+tauri-plugin-autostart = "2.5"
+# Wave 6.1.2: secure token storage — wraps Windows Credential Manager (and platform equivalents)
+# The refresh token is the only credential-at-rest; it NEVER touches a plaintext file or log.
+keyring = { version = "4.1", features = ["windows-native-keyring-store"] }
+png = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Wave 6.2.1: notification plugin — native Windows toast delivery.
+# Action buttons are NOT used in this wave (that is Wave 6.2.2).
+tauri-plugin-notification = "2.3"
+# Wave 6.2.1: HTTP client for the authenticated poll loop (GET /api/tasks/due).
+# reqwest with rustls to avoid the OpenSSL dep on Windows; json + blocking features used.
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+# Wave 6.2.1: async runtime for the background poll loop Tokio task.
+tokio = { version = "1", features = ["rt", "time", "sync"] }
+# Wave 6.2.1: ISO-8601 timestamp parsing for the is_at_or_before_now check.
+chrono = { version = "0.4", features = ["serde"] }
+
+[profile.release]
+panic = "abort"   # Strip expensive panic clean-up code
+codegen-units = 1 # Compile crate as single unit (decreases build time, increases perf)
+lto = true        # Enables link to optimizations
+opt-level = "s"   # Optimize for binary size
+strip = true      # Automatically strip symbols from the binary

@@ -10,8 +10,8 @@ domain: implementation
 product:
   - coriven
 epic: "7"
-feature: "7.2"
-wave: "7.2.1"
+feature: "8.2"
+wave: "8.2.1"
 agents: []
 tags: [coriven, enforcement, middleware, entity-cap, reminder-cap, memory-window, tiers, paywall]
 relateddocuments:
@@ -22,7 +22,7 @@ relateddocuments:
   - "docs/architecture/decisions/ADR-011-entity-cap-paywall-memory-window.md"
 ---
 
-# Wave 7.2.1: Tier Enforcement Middleware
+# Wave 8.2.1: Tier Enforcement Middleware
 
 ## Wave Overview
 
@@ -74,7 +74,7 @@ relateddocuments:
 | Parent Story | 7.2.1.1 |
 | Agent | backend-specialist |
 | Estimation | 6h |
-| Dependencies | Wave 7.1.1 (subscription_tier column, TIER_LIMITS constant) |
+| Dependencies | Wave 8.1.1 (subscription_tier column, TIER_LIMITS constant) |
 | Deliverables | `apps/web/src/lib/billing/cap-guard.ts` — exported `checkEntityCap(userId, supabase)`, `checkReminderCap(userId, supabase)` returning `{ allowed: boolean; reason?: string }` |
 
 **Acceptance Criteria:**
@@ -171,7 +171,7 @@ relateddocuments:
 | Parent Story | 7.2.1.3 |
 | Agent | backend-specialist |
 | Estimation | 4h |
-| Dependencies | Wave 7.1.1 (TIER_LIMITS constant) |
+| Dependencies | Wave 8.1.1 (TIER_LIMITS constant) |
 | Deliverables | `apps/web/src/lib/billing/memory-window.ts` — exported `getMemoryWindowCutoff(tier: SubscriptionTier): Date` |
 
 **Acceptance Criteria:**
@@ -228,7 +228,7 @@ relateddocuments:
 | Parent Story | 7.2.1.4 |
 | Agent | backend-specialist |
 | Estimation | 6h |
-| Dependencies | Wave 7.1.1 Task 7.1.1.1.1; Wave 7.1.1 Task 7.1.1.1.2 |
+| Dependencies | Wave 8.1.1 Task 7.1.1.1.1; Wave 8.1.1 Task 7.1.1.1.2 |
 | Deliverables | Updated `apps/web/src/middleware.ts`; `apps/web/src/lib/billing/route-config.ts`; middleware integration tests |
 
 **Acceptance Criteria:**
@@ -243,7 +243,7 @@ relateddocuments:
 ## Task Dependencies
 
 ```
-Wave 7.1.1 (subscription_tier column, TIER_LIMITS) — prerequisite for this entire wave
+Wave 8.1.1 (subscription_tier column, TIER_LIMITS) — prerequisite for this entire wave
 
 Task 7.2.1.1.1 (cap guard utility)
   └── Task 7.2.1.1.2 (entity creation handler integration)
@@ -252,10 +252,10 @@ Task 7.2.1.1.1 (cap guard utility)
 Task 7.2.1.3.1 (memory window utility)
   └── Task 7.2.1.3.2 (apply to Sentinel + inline retrieval)
 
-Task 7.2.1.4.1 (middleware tier enforcement) — depends only on Wave 7.1.1; parallelizable with cap-guard tasks
+Task 7.2.1.4.1 (middleware tier enforcement) — depends only on Wave 8.1.1; parallelizable with cap-guard tasks
 ```
 
-**Critical path:** Wave 7.1.1 → 7.2.1.1.1 → 7.2.1.1.2 + 7.2.1.2.1 (parallel) and 7.2.1.3.1 → 7.2.1.3.2.
+**Critical path:** Wave 8.1.1 → 7.2.1.1.1 → 7.2.1.1.2 + 7.2.1.2.1 (parallel) and 7.2.1.3.1 → 7.2.1.3.2.
 **Parallelizable:** memory-window tasks (7.2.1.3.x) and middleware task (7.2.1.4.1) can run concurrently with cap-guard integration tasks once 7.2.1.1.1 is done.
 
 ## Definition of Done
@@ -285,7 +285,7 @@ Task 7.2.1.4.1 (middleware tier enforcement) — depends only on Wave 7.1.1; par
 ### UI
 
 - No new UI components in this wave; the cap-hit response from tool handlers is surfaced by the existing chat message rendering (the model relays the cap reason as natural language to the user).
-- Upgrade prompt UI is covered by Wave 7.3.1 (Conversion UX).
+- Upgrade prompt UI is covered by Wave 8.3.1 (Conversion UX).
 
 ### Testing
 
@@ -309,7 +309,7 @@ Task 7.2.1.4.1 (middleware tier enforcement) — depends only on Wave 7.1.1; par
 
 ## Handoff Requirements
 
-- Wave 7.1.1 must be complete: `subscription_tier` column, `TIER_LIMITS` constant, and the tier-utility functions are prerequisites.
+- Wave 8.1.1 must be complete: `subscription_tier` column, `TIER_LIMITS` constant, and the tier-utility functions are prerequisites.
 - Epic 2 (memory retrieval paths) must be present: the Sentinel and inline assembly code must exist before Task 7.2.1.3.2 can apply the window filter.
 - Epic 2 (entity_profiles table) must exist before Task 7.2.1.1.2.
 
@@ -317,7 +317,7 @@ Task 7.2.1.4.1 (middleware tier enforcement) — depends only on Wave 7.1.1; par
 
 | Risk | Impact | Probability | Mitigation |
 |---|---|---|---|
-| Memory window enforcement "feels broken" — user confused why old memories stopped appearing | Medium | Medium | Clear in-chat message from the model when retrieval returns fewer results than expected; upgrade CTA references the memory window explicitly (Wave 7.3.1) |
+| Memory window enforcement "feels broken" — user confused why old memories stopped appearing | Medium | Medium | Clear in-chat message from the model when retrieval returns fewer results than expected; upgrade CTA references the memory window explicitly (Wave 8.3.1) |
 | Sentinel code (Epic 2) may not yet exist when this wave begins | High — blocks 7.2.1.3.2 | Low-Medium | Task 7.2.1.3.1 (utility) can be delivered; 7.2.1.3.2 is a blocker until Epic 2 lands |
 | Vercel Edge Runtime incompatibility with service-role Supabase client in middleware | Medium | Medium | Use the user's JWT + anon client in middleware (RLS-safe SELECT of own profile); document decision |
 | Race condition in cap check (concurrent tool calls) | Low | Low | The COUNT query is consistent within a transaction; acceptable at per-user scale without optimistic locking |
@@ -329,5 +329,5 @@ Task 7.2.1.4.1 (middleware tier enforcement) — depends only on Wave 7.1.1; par
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` Feature 9, UC-22, UC-23, UC-24
 - Architecture: `docs/architecture/_main/04-Architecture.md` §Authentication and Authorization, §Data Governance
 - ADR-011: `docs/architecture/decisions/ADR-011-entity-cap-paywall-memory-window.md`
-- Epic 7: `docs/implementation/_main/epic-7-productization.md`
-- Wave 7.1.1: `docs/implementation/iterations/wave-7.1.1-stripe-billing-and-tiers.md`
+- Epic 8: `docs/implementation/_main/epic-7-productization.md`
+- Wave 8.1.1: `docs/implementation/iterations/wave-8.1.1-stripe-billing-and-tiers.md`

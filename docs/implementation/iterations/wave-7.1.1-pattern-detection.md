@@ -10,8 +10,8 @@ domain: implementation
 product:
   - coriven
 epic: "6"
-feature: "6.1"
-wave: "6.1.1"
+feature: "7.1"
+wave: "7.1.1"
 agents: []
 tags: [coriven, proactive, pattern-detection, cron, detected-patterns, tray, notifications]
 relateddocuments:
@@ -23,7 +23,7 @@ relateddocuments:
   - "docs/planning/2026-06-24-coriven-master-blueprint.md"
 ---
 
-# Wave 6.1.1: Pattern Detection
+# Wave 7.1.1: Pattern Detection
 
 ## Wave Overview
 
@@ -317,7 +317,7 @@ relateddocuments:
 
 ## Related Documentation
 
-- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 6.1
+- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 7.1
 - Architecture: `docs/architecture/_main/04-Architecture.md` — §14.5 (`detected_patterns`), jobs/cron
 - ADR-010: `docs/architecture/decisions/ADR-010-scheduled-proactive-jobs.md`
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` — Feature 8, UC-42
