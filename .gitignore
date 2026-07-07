@@ -13,6 +13,13 @@ apps/web/out/
 build/
 dist/
 
+# Tauri tray webview dist — this directory IS source-controlled (it's the frontendDist).
+# Un-ignore the tray dist directory and its tracked source files.
+# Generated files (config.js, vendor/) within it are ignored via apps/tray/dist/.gitignore
+# after we un-ignore the dir itself here.
+!apps/tray/dist/
+!apps/tray/dist/**
+
 # Node
 node_modules/
 

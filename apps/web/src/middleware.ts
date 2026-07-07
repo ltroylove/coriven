@@ -35,7 +35,18 @@ export async function middleware(request: NextRequest) {
   const isApiAuthRoute = pathname.startsWith('/api/auth')
   const isPublicPage = pathname === '/'
 
+  // Tray API routes that accept a Bearer token must NOT be redirected to /signin.
+  // Only these specific endpoints are called by the tray; other /api/* routes
+  // still require a browser session.
+  const TRAY_API_ROUTES = ['/api/tasks/due', '/api/briefing/today', '/api/approvals/pending']
+  const isTrayApiRoute = TRAY_API_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
+  const hasBearerToken = request.headers.get('Authorization')?.startsWith('Bearer ') ?? false
+
   if (!user && !isAuthRoute && !isApiAuthRoute && !isPublicPage) {
+    if (isTrayApiRoute && hasBearerToken) {
+      // Let the route handler validate the token and return 401 if needed.
+      return supabaseResponse
+    }
     const url = request.nextUrl.clone()
     url.pathname = '/signin'
     url.searchParams.set('next', pathname)

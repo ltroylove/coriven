@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server'
-import { createAuthServerClient } from '@/lib/supabase/auth-server'
+import { type NextRequest, NextResponse } from 'next/server'
+import { createApiServerClient } from '@/lib/supabase/api-server'
 import { createServiceClient } from '@/lib/supabase/server'
 
-export async function GET() {
-  const supabase = await createAuthServerClient()
+export async function GET(request: NextRequest) {
+  const supabase = await createApiServerClient(request)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

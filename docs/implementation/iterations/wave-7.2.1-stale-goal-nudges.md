@@ -10,8 +10,8 @@ domain: implementation
 product:
   - coriven
 epic: "6"
-feature: "6.2"
-wave: "6.2.1"
+feature: "7.2"
+wave: "7.2.1"
 agents: []
 tags: [coriven, proactive, stale-goal, nudge, tray, notifications, momentum, goals]
 relateddocuments:
@@ -23,7 +23,7 @@ relateddocuments:
   - "docs/planning/2026-06-24-coriven-master-blueprint.md"
 ---
 
-# Wave 6.2.1: Stale-Goal Nudges
+# Wave 7.2.1: Stale-Goal Nudges
 
 ## Wave Overview
 
@@ -39,7 +39,7 @@ relateddocuments:
 
 ## Wave Goals
 
-1. **Stale-goal detection integrated into the cron pipeline.** The nightly job identifies goals whose last linked task-completion timestamp is more than 14 days ago (or have never had a completion), writes a `stale_goal` entry to `detected_patterns`, and deactivates it if activity resumes — fully reusing the pattern store from Wave 6.1.1.
+1. **Stale-goal detection integrated into the cron pipeline.** The nightly job identifies goals whose last linked task-completion timestamp is more than 14 days ago (or have never had a completion), writes a `stale_goal` entry to `detected_patterns`, and deactivates it if activity resumes — fully reusing the pattern store from Wave 7.1.1.
 2. **Tray nudge delivered per stale goal within the frequency cap.** The tray poll receives and fires one native notification per stale goal per 7-day window ("Your [goal] goal hasn't had activity in N days"); the message is generated server-side with the actual day count; silence after user activity resumes.
 3. **`push_notification` tool available in chat.** The tool allows the chat engine to surface a stale-goal reminder on demand (e.g., user asks "remind me about my gym goal"); the tool inserts a notification entry that the tray picks up on its next poll cycle.
 
@@ -52,7 +52,7 @@ relateddocuments:
 **So that** the system can proactively surface goals the user has silently abandoned, consistent with the goal-health model from Epic 4.
 
 **Acceptance Criteria:**
-- The nightly detection job (from Wave 6.1.1 or a co-located extension) queries `goals` joined with `tasks` to find goals where the most recent task `completed_at` is older than 14 days, or where the goal has no linked completed tasks at all.
+- The nightly detection job (from Wave 7.1.1 or a co-located extension) queries `goals` joined with `tasks` to find goals where the most recent task `completed_at` is older than 14 days, or where the goal has no linked completed tasks at all.
 - Goals with `status = 'completed'` or `status = 'cancelled'` are excluded from staleness checks.
 - For each stale goal, a `detected_patterns` row is upserted with `pattern_type = 'stale_goal'`, a description including the goal title and exact inactivity count in days (e.g., "No activity on 'Read 12 books' for 18 days"), and `is_active = true`.
 - When a stale goal resumes task activity (a linked task is completed), the corresponding `stale_goal` pattern is set to `is_active = false` on the next nightly run.
@@ -68,7 +68,7 @@ relateddocuments:
 - **Parent Story:** 6.2.1.1
 - **Agent:** Backend Engineer
 - **Estimation:** 5h
-- **Dependencies:** Wave 6.1.1 complete (`detected_patterns` table and job framework); Epic 4 `goals` and `tasks` tables with `completed_at` and goal-task linkage
+- **Dependencies:** Wave 7.1.1 complete (`detected_patterns` table and job framework); Epic 4 `goals` and `tasks` tables with `completed_at` and goal-task linkage
 - **Deliverables:** Updated `apps/web/src/lib/jobs/detect-patterns.ts` with `detectStaleGoals(userId: string)` function; exported `STALE_GOAL_THRESHOLD_DAYS` constant
 - **Acceptance Criteria:** Function queries goals not in terminal status with no linked task completion in the threshold window; upsert to `detected_patterns` is idempotent; resumption of activity deactivates the pattern on subsequent runs; unit tests cover the staleness calculation, the resumption path, and the exclusion of completed/cancelled goals.
 
@@ -81,9 +81,9 @@ relateddocuments:
 **So that** I'm reminded before the goal silently drifts without ever choosing to abandon it.
 
 **Acceptance Criteria:**
-- The tray polls `/api/patterns/new` (from Wave 6.1.1) and receives `stale_goal` patterns along with other pattern types; no new endpoint required.
+- The tray polls `/api/patterns/new` (from Wave 7.1.1) and receives `stale_goal` patterns along with other pattern types; no new endpoint required.
 - The notification message is assembled server-side and includes the goal title and inactivity day count, sourced from the pattern's `description` field.
-- Frequency cap: a stale-goal notification for the same goal fires at most once per 7 days per user; enforced via `last_notified_at` on the `detected_patterns` row (from Wave 6.1.1).
+- Frequency cap: a stale-goal notification for the same goal fires at most once per 7 days per user; enforced via `last_notified_at` on the `detected_patterns` row (from Wave 7.1.1).
 - Notification tone is matter-of-fact, not alarming: "Your 'Read 12 books' goal hasn't had activity in 18 days."
 - Notification carries no action buttons (informational); dismissing it on the OS clears it.
 - A goal that receives a nudge and then has a task completed within the next poll cycle stops receiving nudges (pattern deactivated by the next nightly run).
@@ -99,7 +99,7 @@ relateddocuments:
 - **Parent Story:** 6.2.1.2
 - **Agent:** Backend / Tray Engineer
 - **Estimation:** 3h
-- **Dependencies:** Task 6.2.1.1.1; Wave 6.1.1 tray integration (Task 6.1.1.4.2)
+- **Dependencies:** Task 6.2.1.1.1; Wave 7.1.1 tray integration (Task 6.1.1.4.2)
 - **Deliverables:** End-to-end integration test or manual test log confirming a stale-goal pattern fires a tray notification with the correct message; any required updates to the tray's `notifyPattern` call to handle `stale_goal` type specifically (e.g., no sound, specific icon if applicable)
 - **Acceptance Criteria:** A synthetic `stale_goal` pattern row with `last_notified_at = null` causes the tray to fire a notification on the next poll; the notification text matches the `description` field; `last_notified_at` is set after firing; re-polling within 7 days does not re-fire.
 
@@ -165,7 +165,7 @@ relateddocuments:
 ## Task Dependencies
 
 ```
-Wave 6.1.1 (detected_patterns table, job framework, tray path) — prerequisite
+Wave 7.1.1 (detected_patterns table, job framework, tray path) — prerequisite
 Epic 4 (goals, tasks with completed_at, briefing assembly) — prerequisite
     │
 6.2.1.1.1  (stale-goal analysis in detection job)
@@ -175,7 +175,7 @@ Epic 4 (goals, tasks with completed_at, briefing assembly) — prerequisite
 6.2.1.4.1  (push_notification tool) — independent; needs only DB and tool registry
 ```
 
-**Critical path:** Wave 6.1.1 complete + Epic 4 deployed → stale-goal analysis (6.2.1.1.1) → tray path (6.2.1.2.1). Briefing integration and `push_notification` tool parallelize after 6.2.1.1.1.
+**Critical path:** Wave 7.1.1 complete + Epic 4 deployed → stale-goal analysis (6.2.1.1.1) → tray path (6.2.1.2.1). Briefing integration and `push_notification` tool parallelize after 6.2.1.1.1.
 
 ## Definition of Done
 
@@ -193,7 +193,7 @@ Epic 4 (goals, tasks with completed_at, briefing assembly) — prerequisite
 
 ### Database
 
-**Reuses `detected_patterns` from Wave 6.1.1.** No new tables required.
+**Reuses `detected_patterns` from Wave 7.1.1.** No new tables required.
 
 **Key query (stale-goal detection):**
 ```sql
@@ -225,7 +225,7 @@ Threshold (14 days) sourced from `STALE_GOAL_THRESHOLD_DAYS` constant. Parameter
 
 **No new cron endpoints** — stale-goal detection is part of the existing `/api/cron/detect-patterns` job extended in Task 6.2.1.1.1.
 
-**No new tray endpoints** — stale-goal patterns flow through `/api/patterns/new` from Wave 6.1.1.
+**No new tray endpoints** — stale-goal patterns flow through `/api/patterns/new` from Wave 7.1.1.
 
 ### UI
 
@@ -242,8 +242,8 @@ No new UI screens required. The briefing's stalled-goals section is an update to
 
 ### Deployment
 
-- No new Vercel Cron entries — stale-goal detection is part of the existing nightly job from Wave 6.1.1.
-- `CRON_SECRET` already required from Wave 6.1.1.
+- No new Vercel Cron entries — stale-goal detection is part of the existing nightly job from Wave 7.1.1.
+- `CRON_SECRET` already required from Wave 7.1.1.
 - No new environment variables introduced.
 
 ### Monitoring
@@ -254,7 +254,7 @@ No new UI screens required. The briefing's stalled-goals section is an update to
 
 ## Handoff Requirements
 
-- Wave 6.1.1 must be fully deployed (`detected_patterns` table, nightly job, tray path, frequency-cap mechanism).
+- Wave 7.1.1 must be fully deployed (`detected_patterns` table, nightly job, tray path, frequency-cap mechanism).
 - Epic 4 goals and tasks tables must be populated with real goal-task linkage and `completed_at` timestamps.
 - Epic 4 briefing assembly service must exist before Task 6.2.1.3.1 can be implemented.
 
@@ -269,10 +269,10 @@ No new UI screens required. The briefing's stalled-goals section is an update to
 
 ## Related Documentation
 
-- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 6.2
+- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 7.2
 - Architecture: `docs/architecture/_main/04-Architecture.md` — §14.5, jobs/cron, §7.3 (momentum/stale model)
 - ADR-010: `docs/architecture/decisions/ADR-010-scheduled-proactive-jobs.md`
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` — Feature 8, UC-40
 - UX: `docs/architecture/_main/05-User-Experience.md` — calm proactivity, Today/Briefing screen
 - Blueprint: `docs/planning/2026-06-24-coriven-master-blueprint.md` — §12.2, §7.3
-- Preceding wave: `docs/implementation/iterations/wave-6.1.1-pattern-detection.md`
+- Preceding wave: `docs/implementation/iterations/wave-7.1.1-pattern-detection.md`

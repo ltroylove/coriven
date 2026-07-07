@@ -10,8 +10,8 @@ domain: implementation
 product:
   - coriven
 epic: "7"
-feature: "7.3"
-wave: "7.3.1"
+feature: "8.3"
+wave: "8.3.1"
 agents: []
 tags: [coriven, conversion, upgrade-prompt, pricing-page, trial, entity-cap, paywall, ux]
 relateddocuments:
@@ -23,7 +23,7 @@ relateddocuments:
   - "docs/architecture/decisions/ADR-011-entity-cap-paywall-memory-window.md"
 ---
 
-# Wave 7.3.1: Conversion UX — Prompts, Pricing, and Trial
+# Wave 8.3.1: Conversion UX — Prompts, Pricing, and Trial
 
 ## Wave Overview
 
@@ -76,7 +76,7 @@ relateddocuments:
 | Parent Story | 7.3.1.1 |
 | Agent | frontend-specialist |
 | Estimation | 6h |
-| Dependencies | Wave 7.2.1 (cap-hit tool result format established) |
+| Dependencies | Wave 8.2.1 (cap-hit tool result format established) |
 | Deliverables | `apps/web/src/components/billing/CapHitPrompt.tsx`; Storybook story or equivalent visual test |
 
 **Acceptance Criteria:**
@@ -138,7 +138,7 @@ relateddocuments:
 | Parent Story | 7.3.1.2 |
 | Agent | frontend-specialist |
 | Estimation | 8h |
-| Dependencies | Wave 7.1.1 (Checkout route); Wave 7.2.1 (tier from middleware header or server component fetch) |
+| Dependencies | Wave 8.1.1 (Checkout route); Wave 8.2.1 (tier from middleware header or server component fetch) |
 | Deliverables | `apps/web/src/app/pricing/page.tsx`; `apps/web/src/components/billing/PricingCard.tsx`; `apps/web/src/components/billing/PricingToggle.tsx` |
 
 **Acceptance Criteria:**
@@ -168,7 +168,7 @@ relateddocuments:
 - During the trial, all Core tier entitlements apply (unlimited entities, 7-day memory window, 3 reminders/day) — the enforcement middleware reads `subscription_tier = 'core'` and behaves accordingly.
 - At `trial_ends_at`, a Vercel Cron job (nightly) downgrades any expired trial users back to `'free'` and reapplies Free caps.
 - A "Trial ends in X days" banner displays in the app header for trial users.
-- 2 days before trial expiry, the trial expiry notification fires (in-app banner upgrades to prominent; ideally also a Web Push notification if the user has granted permission — covered by Wave 7.5.1 if not yet available).
+- 2 days before trial expiry, the trial expiry notification fires (in-app banner upgrades to prominent; ideally also a Web Push notification if the user has granted permission — covered by Wave 8.5.1 if not yet available).
 - Subscribing during the trial moves the user to a full Stripe subscription; the webhook sets the tier and clears `trial_ends_at`.
 
 ---
@@ -180,7 +180,7 @@ relateddocuments:
 | Parent Story | 7.3.1.3 |
 | Agent | backend-specialist |
 | Estimation | 6h |
-| Dependencies | Wave 7.1.1 Task 7.1.1.1.1 (trial_ends_at column) |
+| Dependencies | Wave 8.1.1 Task 7.1.1.1.1 (trial_ends_at column) |
 | Deliverables | `apps/web/src/app/api/billing/trial/start/route.ts`; unit/integration tests |
 
 **Acceptance Criteria:**
@@ -199,7 +199,7 @@ relateddocuments:
 | Parent Story | 7.3.1.3 |
 | Agent | backend-specialist |
 | Estimation | 6h |
-| Dependencies | Task 7.3.1.3.1; Wave 7.1.1 (subscription_tier) |
+| Dependencies | Task 7.3.1.3.1; Wave 8.1.1 (subscription_tier) |
 | Deliverables | `apps/web/src/app/api/cron/expire-trials/route.ts`; Vercel cron config; unit/integration tests |
 
 **Acceptance Criteria:**
@@ -272,13 +272,13 @@ relateddocuments:
 ## Task Dependencies
 
 ```
-Wave 7.1.1 (billing columns, Checkout route) — prerequisite
-Wave 7.2.1 (cap-hit tool result format) — prerequisite for 7.3.1.1.x
+Wave 8.1.1 (billing columns, Checkout route) — prerequisite
+Wave 8.2.1 (cap-hit tool result format) — prerequisite for 7.3.1.1.x
 
 Task 7.3.1.1.1 (CapHitPrompt component)
   └── Task 7.3.1.1.2 (integrate into chat)
 
-Task 7.3.1.2.1 (pricing page) — can start after Wave 7.1.1, in parallel with 7.3.1.1.x
+Task 7.3.1.2.1 (pricing page) — can start after Wave 8.1.1, in parallel with 7.3.1.1.x
 
 Task 7.3.1.3.1 (trial start endpoint)
   └── Task 7.3.1.3.2 (trial expiry cron)
@@ -287,8 +287,8 @@ Task 7.3.1.3.1 (trial start endpoint)
 Task 7.3.1.4.1 (contextual redirect banner) — depends on Task 7.3.1.2.1
 ```
 
-**Critical path:** Wave 7.1.1 → Wave 7.2.1 → cap-hit prompt → trial endpoint → trial banner.
-**Parallelizable:** pricing page (7.3.1.2.1) and cap-hit prompt tasks (7.3.1.1.x) can start simultaneously after Wave 7.2.1.
+**Critical path:** Wave 8.1.1 → Wave 8.2.1 → cap-hit prompt → trial endpoint → trial banner.
+**Parallelizable:** pricing page (7.3.1.2.1) and cap-hit prompt tasks (7.3.1.1.x) can start simultaneously after Wave 8.2.1.
 
 ## Definition of Done
 
@@ -305,8 +305,8 @@ Task 7.3.1.4.1 (contextual redirect banner) — depends on Task 7.3.1.2.1
 
 ### Database
 
-- No new migrations (Trial columns added in Wave 7.1.1: `subscription_tier`, `trial_ends_at`).
-- **Read patterns:** `profiles` is read for tier state on every middleware request (covered by Wave 7.2.1 middleware task).
+- No new migrations (Trial columns added in Wave 8.1.1: `subscription_tier`, `trial_ends_at`).
+- **Read patterns:** `profiles` is read for tier state on every middleware request (covered by Wave 8.2.1 middleware task).
 
 ### API
 
@@ -356,7 +356,7 @@ Task 7.3.1.4.1 (contextual redirect banner) — depends on Task 7.3.1.2.1
 
 ### Deployment
 
-- No new env vars beyond those established in Wave 7.1.1.
+- No new env vars beyond those established in Wave 8.1.1.
 - `vercel.json` cron config for `/api/cron/expire-trials`: `{ "path": "/api/cron/expire-trials", "schedule": "0 6 * * *" }` — runs at 06:00 UTC daily.
 
 ### Monitoring
@@ -368,8 +368,8 @@ Task 7.3.1.4.1 (contextual redirect banner) — depends on Task 7.3.1.2.1
 
 ## Handoff Requirements
 
-- Wave 7.1.1 complete: `subscription_tier`, `trial_ends_at`, Checkout route, Stripe webhook.
-- Wave 7.2.1 complete: cap-hit tool result format (the structured `{ reason: 'entity_cap' }` response the prompt component consumes).
+- Wave 8.1.1 complete: `subscription_tier`, `trial_ends_at`, Checkout route, Stripe webhook.
+- Wave 8.2.1 complete: cap-hit tool result format (the structured `{ reason: 'entity_cap' }` response the prompt component consumes).
 - Design tokens (colors, typography) from the Tailwind 4 configuration must be available to implement the warning banner state correctly.
 
 ## Risks and Blockers
@@ -379,7 +379,7 @@ Task 7.3.1.4.1 (contextual redirect banner) — depends on Task 7.3.1.2.1
 | Pricing not validated — beta users may not convert at $12/$22 | Medium — business | Medium | Launch as hypothesis (ADR-011 §19.5); instrument trial-start and trial→paid conversion; revisit pricing with beta data |
 | Trial abuse — user creates new accounts to repeatedly trial | Low-Medium | Low | Rate-limit by email domain; require verified email before trial; acceptable at beta scale |
 | Trial expiry cron misfires and downgrades a paying subscriber | High | Low | Cron explicitly filters `stripe_customer_id IS NULL`; paying subscribers are excluded |
-| iOS Web Push not yet available (trial expiry notification) | Low | Medium | Trial banner in app header is the primary notification channel; Web Push is additive (Wave 7.5.1) |
+| iOS Web Push not yet available (trial expiry notification) | Low | Medium | Trial banner in app header is the primary notification channel; Web Push is additive (Wave 8.5.1) |
 | Pricing page accessible to unauthenticated visitors creates auth edge cases | Low | Low | Pricing page is a public route; middleware config excludes `/pricing` from auth redirect |
 
 ## Related Documentation
@@ -389,6 +389,6 @@ Task 7.3.1.4.1 (contextual redirect banner) — depends on Task 7.3.1.2.1
 - UX: `docs/architecture/_main/05-User-Experience.md` §Error Handling UX (cap reached)
 - UX Foundations: `docs/architecture/_main/05a-UX-Foundations.md` Pass 5 (cap state), Pass 6 (tier limits must be visible)
 - ADR-011: `docs/architecture/decisions/ADR-011-entity-cap-paywall-memory-window.md`
-- Epic 7: `docs/implementation/_main/epic-7-productization.md`
-- Wave 7.1.1: `docs/implementation/iterations/wave-7.1.1-stripe-billing-and-tiers.md`
-- Wave 7.2.1: `docs/implementation/iterations/wave-7.2.1-tier-enforcement-middleware.md`
+- Epic 8: `docs/implementation/_main/epic-7-productization.md`
+- Wave 8.1.1: `docs/implementation/iterations/wave-8.1.1-stripe-billing-and-tiers.md`
+- Wave 8.2.1: `docs/implementation/iterations/wave-8.2.1-tier-enforcement-middleware.md`

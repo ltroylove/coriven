@@ -10,8 +10,8 @@ domain: implementation
 product:
   - coriven
 epic: "7"
-feature: "7.1"
-wave: "7.1.1"
+feature: "8.1"
+wave: "8.1.1"
 agents: []
 tags: [coriven, stripe, billing, subscription, tiers, webhooks, mealprepforge]
 relateddocuments:
@@ -22,7 +22,7 @@ relateddocuments:
   - "docs/architecture/decisions/ADR-011-entity-cap-paywall-memory-window.md"
 ---
 
-# Wave 7.1.1: Stripe Billing and Tiers
+# Wave 8.1.1: Stripe Billing and Tiers
 
 ## Wave Overview
 
@@ -375,4 +375,4 @@ Task 7.1.1.2.1 (Stripe SDK setup) — no dependencies; can start immediately in 
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` Feature 9, UC-14
 - Architecture: `docs/architecture/_main/04-Architecture.md` §Integration Architecture (Stripe), Appendix C
 - ADR-011: `docs/architecture/decisions/ADR-011-entity-cap-paywall-memory-window.md`
-- Epic 7: `docs/implementation/_main/epic-7-productization.md`
+- Epic 8: `docs/implementation/_main/epic-7-productization.md`

@@ -10,8 +10,8 @@ domain: implementation
 product:
   - coriven
 epic: "6"
-feature: "6.3"
-wave: "6.3.1"
+feature: "7.3"
+wave: "7.3.1"
 agents: []
 tags: [coriven, proactive, weekly-review, daily-briefings, cron, tray, deterministic-assembly]
 relateddocuments:
@@ -23,7 +23,7 @@ relateddocuments:
   - "docs/planning/2026-06-24-coriven-master-blueprint.md"
 ---
 
-# Wave 6.3.1: Weekly Review
+# Wave 7.3.1: Weekly Review
 
 ## Wave Overview
 
@@ -352,7 +352,7 @@ interface WeeklyReviewSectionProps {
 
 ## Related Documentation
 
-- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 6.3
+- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 7.3
 - Architecture: `docs/architecture/_main/04-Architecture.md` — §14.4 (`daily_briefings`), jobs/cron, ADR-008 (deterministic-assembly ethos)
 - ADR-010: `docs/architecture/decisions/ADR-010-scheduled-proactive-jobs.md`
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` — Feature 8, UC-38

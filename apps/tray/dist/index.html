@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coriven</title>
+
+    <!-- Config: Supabase URL + anon key (injected at build time via bundle-deps.js).
+         The anon key is public by design — it is safe to ship in a desktop binary.
+         dist/config.js is gitignored; see dist/config.example.js for the template. -->
+    <script src="config.js"></script>
+
+    <!-- Supabase JS client (UMD bundle — no module bundler required) -->
+    <script src="vendor/supabase.js"></script>
+
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #0f0f0f;
+        color: #e8e8e8;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .card {
+        width: 100%;
+        max-width: 340px;
+        background: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        padding: 32px 28px;
+      }
+
+      .logo {
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .logo h1 {
+        font-size: 22px;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: -0.3px;
+      }
+      .logo p {
+        font-size: 13px;
+        color: #888;
+        margin-top: 4px;
+      }
+
+      /* ── Status panel (shown when signed in) ── */
+      #status-panel { display: none; text-align: center; }
+      #status-panel .signed-in-label {
+        font-size: 14px;
+        color: #4ade80;
+        margin-bottom: 8px;
+      }
+      #status-panel .user-id {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 24px;
+        word-break: break-all;
+      }
+
+      /* ── Sign-in form ── */
+      #sign-in-panel { display: none; }
+
+      label {
+        display: block;
+        font-size: 12px;
+        color: #999;
+        margin-bottom: 6px;
+        margin-top: 16px;
+      }
+      label:first-of-type { margin-top: 0; }
+
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        background: #111;
+        border: 1px solid #333;
+        border-radius: 8px;
+        color: #e8e8e8;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      input:focus { border-color: #555; }
+      input::placeholder { color: #555; }
+
+      .error-msg {
+        font-size: 12px;
+        color: #f87171;
+        margin-top: 10px;
+        min-height: 18px;
+        text-align: center;
+      }
+
+      button {
+        display: block;
+        width: 100%;
+        padding: 11px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s, background 0.15s;
+        margin-top: 20px;
+      }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .btn-primary { background: #2563eb; color: #fff; }
+      .btn-primary:not(:disabled):hover { background: #1d4ed8; }
+
+      .btn-secondary {
+        background: transparent;
+        color: #888;
+        border: 1px solid #333;
+        margin-top: 12px;
+      }
+      .btn-secondary:not(:disabled):hover { border-color: #555; color: #aaa; }
+
+      .btn-danger {
+        background: transparent;
+        color: #f87171;
+        border: 1px solid #3f1f1f;
+        margin-top: 12px;
+      }
+      .btn-danger:not(:disabled):hover { background: #1f0f0f; }
+
+      /* ── Loading spinner ── */
+      #loading-panel {
+        text-align: center;
+        color: #666;
+        font-size: 13px;
+      }
+
+      /* ── Offline/error banner ── */
+      #offline-banner {
+        display: none;
+        background: #2a1f00;
+        border: 1px solid #4a3800;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: 12px;
+        color: #fbbf24;
+        text-align: center;
+        margin-top: 16px;
+      }
+
+      .autostart-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 16px;
+        font-size: 12px;
+        color: #666;
+      }
+      .autostart-row span { color: #888; }
+      .toggle-link {
+        color: #4b9eff;
+        cursor: pointer;
+        background: none;
+        border: none;
+        font-size: 12px;
+        padding: 0;
+        margin: 0;
+        width: auto;
+        text-decoration: underline;
+      }
+      .toggle-link:hover { color: #7ab8ff; }
+
+      /* ── Picker view (snooze/dismiss actions) ── */
+      #picker-panel { display: none; text-align: center; }
+      #picker-panel .picker-label {
+        font-size: 13px;
+        color: #999;
+        margin-bottom: 6px;
+      }
+      #picker-panel .picker-reminder-id {
+        font-size: 11px;
+        color: #555;
+        margin-bottom: 20px;
+        word-break: break-all;
+      }
+      .picker-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .picker-actions button { margin-top: 0; }
+      .btn-snooze { background: #1d4ed8; color: #fff; }
+      .btn-snooze:not(:disabled):hover { background: #1e40af; }
+      .btn-dismiss { background: transparent; color: #888; border: 1px solid #333; }
+      .btn-dismiss:not(:disabled):hover { border-color: #555; color: #aaa; }
+      #picker-msg {
+        font-size: 12px;
+        color: #f87171;
+        margin-top: 12px;
+        min-height: 18px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="logo">
+        <h1>Coriven</h1>
+        <p>Personal assistant tray</p>
+      </div>
+
+      <!-- Loading / session-restore state -->
+      <div id="loading-panel">Checking session&hellip;</div>
+
+      <!-- Offline banner (shown when restore fails due to network) -->
+      <div id="offline-banner">
+        Unable to reach Supabase — working offline.<br />
+        Your session will restore when the network is available.
+      </div>
+
+      <!-- Signed-in state -->
+      <div id="status-panel">
+        <p class="signed-in-label">&#10003; Signed in</p>
+        <p class="user-id" id="display-user-id"></p>
+
+        <div class="autostart-row">
+          <span id="autostart-label">Autostart: checking&hellip;</span>
+          <button class="toggle-link" id="btn-toggle-autostart">toggle</button>
+        </div>
+
+        <button class="btn-danger" id="btn-sign-out">Sign Out</button>
+        <button class="btn-secondary" id="btn-close-window">Close</button>
+      </div>
+
+      <!-- Picker view: snooze/dismiss actions (shown when hash = #/tray/picker) -->
+      <div id="picker-panel">
+        <p class="picker-label">Reminder due — choose an action:</p>
+        <p class="picker-reminder-id" id="picker-reminder-id"></p>
+        <div class="picker-actions">
+          <button class="btn-snooze" id="btn-snooze-15">Snooze 15 min</button>
+          <button class="btn-snooze" id="btn-snooze-60">Snooze 1 hour</button>
+          <button class="btn-dismiss" id="btn-dismiss">Dismiss</button>
+        </div>
+        <p id="picker-msg"></p>
+      </div>
+
+      <!-- Sign-in form -->
+      <div id="sign-in-panel">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@example.com" autocomplete="email" />
+
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+
+        <p class="error-msg" id="error-msg"></p>
+
+        <button class="btn-primary" id="btn-sign-in">Sign In</button>
+      </div>
+    </div>
+
+    <!-- SEC-1: Application script externalized from index.html to remove 'unsafe-inline'.
+         D-3: This script contains the coriven://auth/refresh-needed listener.
+         app.js is committed to VCS (not excluded by dist/.gitignore). -->
+    <script src="app.js"></script>
+  </body>
+</html>

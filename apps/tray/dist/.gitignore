@@ -1,0 +1,18 @@
+# Tray webview dist — this directory IS committed (it's the Tauri frontendDist).
+# The root .gitignore has `dist/` globally; this file overrides it for apps/tray/dist/.
+
+# Un-ignore everything in this directory by default
+!*
+!*/
+!**/*
+
+# THEN ignore the generated/sensitive files:
+
+# config.js is generated from env vars at build time (or manually from config.example.js).
+# It is gitignored because project-specific URLs are config, not source.
+# The anon key is public by design, but keep it out of VCS per convention.
+config.js
+
+# vendor/ contains node_modules bundles copied by scripts/bundle-deps.js.
+# Regenerated each build — do not commit.
+vendor/

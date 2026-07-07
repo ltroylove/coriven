@@ -19,12 +19,14 @@ This directory holds Coriven's architecture decision records. ADRs capture signi
 | ADR-011 | Entity cap as primary paywall; memory window enforced at retrieval | Accepted | `ADR-011-entity-cap-paywall-memory-window.md` |
 | ADR-012 | Remove the Node.js tray; Tauri is the only tray | Accepted | `ADR-012-tauri-migration-timing.md` |
 | ADR-013 | Integration platform — Nango OAuth authority + direct provider APIs (long-tail deferred) | Accepted | `ADR-013-integration-token-authority.md` |
+| ADR-014 | Tauri tray as Epic 6 — Windows-first, unsigned local build now | Accepted | `ADR-014-tauri-tray-windows-first.md` |
+| ADR-015 | Bearer JWT auth for desktop tray API routes | Accepted | `ADR-015-api-bearer-auth-for-desktop-tray.md` |
 
 > ADR-001–006 are the strategic stack decisions, documented in full inline in `docs/architecture/_main/04-Architecture.md`. ADR-007+ are epic-level decisions surfaced during `/design-epics` and recorded as standalone files here. ADR-013 supersedes ADR-005 (n8n): the integration write path uses direct provider APIs behind Nango, not n8n.
 
 ## Next ADR number
 
-**ADR-014**
+**ADR-016**
 
 ## Conventions
 
