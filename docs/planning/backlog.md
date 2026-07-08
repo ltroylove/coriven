@@ -62,7 +62,6 @@ Standard UTC + offset pattern: everything is stored and scheduled in UTC interna
 
 3. **Cron schedules use the UTC equivalent** — user sets a preferred notification time in local; that gets converted to UTC and used as the cron expression. To the user it always looks like their local time.
 
-**Multi-user note (future):** a single Vercel Cron schedule can't mean "5pm local" for two users in different timezones simultaneously. Per-user scheduling comes later; for now one user means one UTC equivalent.
 
 ---
 
