@@ -5,7 +5,7 @@ datecreated: "2026-06-29"
 lastupdated: "2026-07-04T00:00:00"
 version: "2.1"
 type: epic
-status: Planning
+status: Completed
 domain: implementation
 product:
   - "coriven"

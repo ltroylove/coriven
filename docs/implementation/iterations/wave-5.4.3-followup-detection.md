@@ -5,7 +5,7 @@ datecreated: "2026-07-02"
 lastupdated: "2026-07-02T00:00:00"
 version: "1.0"
 type: wave
-status: Planning
+status: Completed
 domain: implementation
 product:
   - "coriven"
