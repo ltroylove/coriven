@@ -49,24 +49,20 @@ The current UI is functional and sufficient for testing but is generic (plain Ta
 
 ## Scheduling & Notifications
 
-### BL-004 — Timezone-aware scheduling and user timezone preference
-**Area:** Epic 7 (Proactive Intelligence) / cross-cutting concern for all cron jobs and notification delivery
+### BL-004 — Timezone-aware cron scheduling
+**Area:** Epic 7 (Proactive Intelligence) / `vercel.json` cron config + Settings UI
 
-All scheduled jobs (nightly pattern detection, Friday weekly review, daily briefing) currently run in UTC. The cron schedules in `vercel.json` are hardcoded UTC times with no awareness of the user's actual local time, so notifications fire at whatever UTC maps to — which may be 3am locally.
+The cron expressions in `vercel.json` are hardcoded UTC times. All data is correctly stored in UTC and displayed as local time — that's not the issue. The problem is purely that the cron fires at a UTC time that doesn't correspond to the user's preferred local delivery time (e.g. "Friday 5pm" or "9pm nightly"), so notifications arrive at the wrong hour.
 
-**The fix (simple — currently single-user):**
+**The fix:**
 
-Since Vercel Cron only supports one global UTC schedule, the approach is to work backwards from what the user wants:
+1. **Capture timezone in Settings** — add a timezone field to the settings page, pre-filled from the browser (`Intl.DateTimeFormat().resolvedOptions().timeZone`). Store as an IANA string (e.g. `America/Chicago`) in `profiles.timezone`.
 
-1. **Capture timezone in Settings UI** — add a timezone field to the account/settings page. Pre-fill it from the browser (`Intl.DateTimeFormat().resolvedOptions().timeZone`) so it requires no typing. Store as an IANA string (e.g. `America/Chicago`) in `profiles.timezone`. Show a live preview of the current local time in that zone so the user can confirm it's right.
+2. **Rewrite cron expressions to match** — compute the UTC equivalent of each desired local trigger time and update the cron schedules in `vercel.json`. The user configures their local time; the UTC math is invisible.
 
-2. **Compute UTC offset and update cron schedules** — when the user saves their timezone, a server action computes the UTC equivalent of each desired local trigger time (e.g. "9pm local" for the nightly job, "5pm local Friday" for weekly review) and rewrites the cron expressions in `vercel.json` (or an equivalent config surface), then redeploys. The user always sees and sets their local time; the UTC math happens behind the scenes.
+**Multi-user note (future constraint):** a single global Vercel Cron schedule can't mean "9pm local" for two users in different timezones at the same time. When there are multiple users, the fix is an hourly cron that checks per user whether their desired local trigger time has been crossed since the last run.
 
-3. **Display local time everywhere** — all timestamps shown in the UI (briefings, task due dates, notification history) are converted to `profiles.timezone` before display. Nothing shows raw UTC to the user.
-
-4. **Multi-user path (future):** when there are multiple users with different timezones, shift to an hourly cron that checks whether each user's desired trigger time has passed since the last run. No architecture change needed for now.
-
-**Why:** Notifications at 3am are worse than no notifications — they erode trust and train users to ignore the app. The fix is straightforward for a single user: capture their timezone once, do the UTC math, and show them local time everywhere.
+**Why:** The cron firing at the wrong local time means notifications arrive at 3am. One-time fix: get the timezone, update the UTC cron expression.
 
 ---
 
