@@ -39,6 +39,50 @@ export type Database = {
   }
   public: {
     Tables: {
+      detected_patterns: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          is_active: boolean
+          last_detected_at: string
+          last_notified_at: string | null
+          pattern_type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: string
+          is_active?: boolean
+          last_detected_at?: string
+          last_notified_at?: string | null
+          pattern_type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          is_active?: boolean
+          last_detected_at?: string
+          last_notified_at?: string | null
+          pattern_type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "detected_patterns_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       daily_briefings: {
         Row: {
           briefing_date: string

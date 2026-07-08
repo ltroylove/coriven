@@ -21,6 +21,7 @@ export type ToolName =
   | 'generate_daily_briefing'
   | 'submit_for_approval'
   | 'get_email_thread'
+  | 'detect_patterns'
 
 export interface BehavioralConstraint {
   id: string

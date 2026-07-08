@@ -522,6 +522,38 @@ async function handleSubmitForApproval(input: Input, userId: string): Promise<Ha
   }
 }
 
+async function handleDetectPatterns(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+
+    // is_active defaults to true if not provided
+    const isActive = typeof input.is_active === 'boolean' ? input.is_active : true
+
+    let query = db
+      .from('detected_patterns')
+      .select('id, pattern_type, description, last_detected_at, last_notified_at, is_active, created_at, updated_at')
+      .eq('user_id', userId) // defensive: RLS also enforces this
+      .eq('is_active', isActive)
+      .order('last_detected_at', { ascending: false })
+
+    if (input.pattern_type) {
+      query = query.eq('pattern_type', String(input.pattern_type))
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('[handleDetectPatterns] detect_patterns failed', { userId, error: error.message })
+      return { content: 'Failed to retrieve patterns. Please try again.', is_error: true }
+    }
+
+    return { content: JSON.stringify(data ?? []), is_error: false }
+  } catch (err) {
+    console.error('[handleDetectPatterns] detect_patterns unexpected error', { userId, err })
+    return { content: 'Failed to retrieve patterns. Please try again.', is_error: true }
+  }
+}
+
 const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<HandlerResult>> = {
   create_task: handleCreateTask,
   update_task: handleUpdateTask,
@@ -545,6 +577,7 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   generate_daily_briefing: handleGenerateDailyBriefing,
   submit_for_approval: handleSubmitForApproval,
   get_email_thread: handleGetEmailThread,
+  detect_patterns: handleDetectPatterns,
 }
 
 export async function executeToolHandler(

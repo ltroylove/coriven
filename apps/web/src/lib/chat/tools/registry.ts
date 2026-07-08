@@ -24,6 +24,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'generate_daily_briefing',
   'submit_for_approval',
   'get_email_thread',
+  'detect_patterns',
 ]
 
 export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
@@ -404,6 +405,29 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
         },
       },
       required: ['provider', 'message_id'],
+    },
+  },
+
+  detect_patterns: {
+    name: 'detect_patterns',
+    description:
+      "Retrieve behavioral patterns Coriven has detected about the user's habits and blockers. " +
+      'Returns active patterns by default. Use pattern_type to filter to a specific type. ' +
+      'Results come from the nightly detection job — patterns must be detected before they appear here.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pattern_type: {
+          type: 'string',
+          enum: ['gym_days', 'weekly_review_time', 'stale_goal', 'follow_up_needed'],
+          description: 'Filter to a specific pattern type. Omit to return all types.',
+        },
+        is_active: {
+          type: 'boolean',
+          description: 'Whether to return only active patterns. Default: true.',
+        },
+      },
+      required: [],
     },
   },
 
