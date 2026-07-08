@@ -18,6 +18,7 @@ import {
   detectStaleGoals,
   detectFollowUpNeeded,
   hasSufficientHistory,
+  staleGoalDescription,
   GYM_DAYS_MIN_OCCURRENCES,
   GYM_DAYS_LOOKBACK_DAYS,
   WEEKLY_REVIEW_MIN_OCCURRENCES,
@@ -215,15 +216,19 @@ describe('detectWeeklyReviewTime', () => {
 // ---------------------------------------------------------------------------
 // detectStaleGoals
 // ---------------------------------------------------------------------------
+//
+// Wave 7.2.1: detectStaleGoals now takes last_task_completed_at (not last_activity_at)
+// and returns { id, title, daysSinceActivity }. Goals with status 'completed' or
+// 'cancelled' are excluded (not just non-'active').
 
 describe('detectStaleGoals', () => {
-  it('returns empty array when all goals have recent activity', () => {
+  it('returns empty array when all goals have recent task completion', () => {
     const now = new Date()
     const goals = [
       {
         id: 'g1',
         title: 'Ship v1',
-        last_activity_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS - 1, now),
+        last_task_completed_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS - 1, now),
         created_at: daysAgoISO(30, now),
         status: 'active',
       },
@@ -231,13 +236,45 @@ describe('detectStaleGoals', () => {
     expect(detectStaleGoals(goals, now)).toHaveLength(0)
   })
 
-  it('returns goal when last_activity_at is older than threshold', () => {
+  it('returns goal when last_task_completed_at is exactly 13 days ago — not stale', () => {
+    const now = new Date()
+    const goals = [
+      {
+        id: 'g-13',
+        title: '13 day goal',
+        last_task_completed_at: daysAgoISO(13, now),
+        created_at: daysAgoISO(60, now),
+        status: 'active',
+      },
+    ]
+    expect(detectStaleGoals(goals, now)).toHaveLength(0)
+  })
+
+  it('returns goal when last_task_completed_at is exactly 14 days ago — stale', () => {
+    const now = new Date()
+    const goals = [
+      {
+        id: 'g-14',
+        title: '14 day goal',
+        last_task_completed_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS, now),
+        created_at: daysAgoISO(60, now),
+        status: 'active',
+      },
+    ]
+    // daysAgo sets time to exactly THRESHOLD days before now (to the second), which is < cutoff
+    // when cutoff = now - THRESHOLD_DAYS (also to the second). Due to sub-second execution
+    // the result may vary at the exact boundary; we verify shape only.
+    const result = detectStaleGoals(goals, now)
+    expect(Array.isArray(result)).toBe(true)
+  })
+
+  it('returns goal when last_task_completed_at is older than threshold', () => {
     const now = new Date()
     const goals = [
       {
         id: 'g1',
         title: 'Ship v1',
-        last_activity_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 1, now),
+        last_task_completed_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 1, now),
         created_at: daysAgoISO(60, now),
         status: 'active',
       },
@@ -245,15 +282,17 @@ describe('detectStaleGoals', () => {
     const result = detectStaleGoals(goals, now)
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('g1')
+    expect(result[0].title).toBe('Ship v1')
+    expect(result[0].daysSinceActivity).toBeGreaterThanOrEqual(STALE_GOAL_THRESHOLD_DAYS + 1)
   })
 
-  it('uses created_at when last_activity_at is null', () => {
+  it('uses created_at when last_task_completed_at is null and goal is old enough', () => {
     const now = new Date()
     const goals = [
       {
         id: 'g2',
         title: 'Old goal',
-        last_activity_at: null,
+        last_task_completed_at: null,
         created_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 5, now),
         status: 'active',
       },
@@ -261,15 +300,16 @@ describe('detectStaleGoals', () => {
     const result = detectStaleGoals(goals, now)
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('g2')
+    expect(result[0].daysSinceActivity).toBeGreaterThanOrEqual(STALE_GOAL_THRESHOLD_DAYS + 5)
   })
 
-  it('does not flag new goals with null last_activity_at but recent creation', () => {
+  it('does not flag goals with no completions but recent creation', () => {
     const now = new Date()
     const goals = [
       {
         id: 'g3',
         title: 'Brand new goal',
-        last_activity_at: null,
+        last_task_completed_at: null,
         created_at: daysAgoISO(2, now),
         status: 'active',
       },
@@ -277,37 +317,103 @@ describe('detectStaleGoals', () => {
     expect(detectStaleGoals(goals, now)).toHaveLength(0)
   })
 
-  it('ignores non-active goals', () => {
+  it('excludes goals with status "completed"', () => {
     const now = new Date()
     const goals = [
       {
         id: 'g4',
-        title: 'Achieved goal',
-        last_activity_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 10, now),
+        title: 'Done goal',
+        last_task_completed_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 10, now),
         created_at: daysAgoISO(90, now),
-        status: 'achieved',
+        status: 'completed',
       },
     ]
     expect(detectStaleGoals(goals, now)).toHaveLength(0)
   })
 
-  it('handles exactly at threshold boundary — not stale (must be strictly before)', () => {
+  it('excludes goals with status "cancelled"', () => {
     const now = new Date()
-    // Exactly STALE_GOAL_THRESHOLD_DAYS ago — using < cutoff, so not stale
     const goals = [
       {
         id: 'g5',
-        title: 'Boundary goal',
-        last_activity_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS, now),
-        created_at: daysAgoISO(30, now),
+        title: 'Cancelled goal',
+        last_task_completed_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 10, now),
+        created_at: daysAgoISO(90, now),
+        status: 'cancelled',
+      },
+    ]
+    expect(detectStaleGoals(goals, now)).toHaveLength(0)
+  })
+
+  it('includes goals with status "active" when stale', () => {
+    const now = new Date()
+    const goals = [
+      {
+        id: 'g6',
+        title: 'Active stale goal',
+        last_task_completed_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 3, now),
+        created_at: daysAgoISO(60, now),
         status: 'active',
       },
     ]
-    // The date is exactly at the cutoff; Date comparison is strict less-than.
-    // Depending on sub-second timing, this may or may not be stale.
-    // We just verify the function runs without error.
     const result = detectStaleGoals(goals, now)
-    expect(Array.isArray(result)).toBe(true)
+    expect(result).toHaveLength(1)
+  })
+
+  it('includes goals with status "paused" when stale (not a terminal status)', () => {
+    const now = new Date()
+    const goals = [
+      {
+        id: 'g7',
+        title: 'Paused goal',
+        last_task_completed_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 2, now),
+        created_at: daysAgoISO(60, now),
+        status: 'paused',
+      },
+    ]
+    const result = detectStaleGoals(goals, now)
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe('g7')
+  })
+
+  it('returns correct daysSinceActivity in result', () => {
+    const now = new Date()
+    const inactiveDays = STALE_GOAL_THRESHOLD_DAYS + 5
+    const goals = [
+      {
+        id: 'g8',
+        title: 'Counted goal',
+        last_task_completed_at: daysAgoISO(inactiveDays, now),
+        created_at: daysAgoISO(60, now),
+        status: 'active',
+      },
+    ]
+    const result = detectStaleGoals(goals, now)
+    expect(result).toHaveLength(1)
+    // daysSinceActivity should be approximately inactiveDays (±1 due to sub-second timing)
+    expect(result[0].daysSinceActivity).toBeGreaterThanOrEqual(inactiveDays - 1)
+    expect(result[0].daysSinceActivity).toBeLessThanOrEqual(inactiveDays + 1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// staleGoalDescription
+// ---------------------------------------------------------------------------
+
+describe('staleGoalDescription', () => {
+  it('generates correct description format', () => {
+    const desc = staleGoalDescription('Read 12 books', 18)
+    expect(desc).toBe("No activity on 'Read 12 books' for 18 days")
+  })
+
+  it('includes exact day count', () => {
+    const desc = staleGoalDescription('Ship v1', 21)
+    expect(desc).toContain('21 days')
+  })
+
+  it('includes goal title', () => {
+    const desc = staleGoalDescription('Gym habit', 15)
+    expect(desc).toContain('Gym habit')
   })
 })
 

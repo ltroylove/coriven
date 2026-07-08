@@ -22,6 +22,7 @@ export type ToolName =
   | 'submit_for_approval'
   | 'get_email_thread'
   | 'detect_patterns'
+  | 'push_notification'
 
 export interface BehavioralConstraint {
   id: string

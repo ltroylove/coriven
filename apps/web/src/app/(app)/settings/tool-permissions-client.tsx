@@ -27,6 +27,7 @@ const TOOL_LABELS: Record<ToolName, { label: string; description: string }> = {
   submit_for_approval: { label: 'Submit for approval', description: 'Propose external actions (email, calendar) for your review before anything executes' },
   get_email_thread: { label: 'Read email thread', description: 'Fetch the full content of a specific email message on demand — never stored' },
   detect_patterns: { label: 'Detect patterns', description: 'Surface behavioral habits and blockers detected by the nightly pattern analysis job' },
+  push_notification: { label: 'Push notifications', description: 'Send a proactive tray notification on demand — fires on the next tray poll cycle' },
 }
 
 type Permission = { tool_name: ToolName; enabled: boolean }

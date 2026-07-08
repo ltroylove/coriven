@@ -1,10 +1,12 @@
 /**
  * lib/jobs/detect-patterns.ts
- * Wave 7.1.1 — Pattern Detection
+ * Wave 7.1.1 / Wave 7.2.1 — Pattern Detection
  *
  * Analyzes per-user task-completion history for behavioral patterns and writes
  * results to the `detected_patterns` table. Designed to be called by the nightly
- * cron endpoint. All DB writes are idempotent upserts on (user_id, pattern_type).
+ * cron endpoint. All DB writes are idempotent upserts on (user_id, pattern_type)
+ * for non-goal patterns, and on (user_id, pattern_type, goal_id) for stale-goal
+ * patterns (one row per stale goal).
  */
 
 import { createServiceClient } from '@/lib/supabase/server'
@@ -31,7 +33,8 @@ export const WEEKLY_REVIEW_LOOKBACK_DAYS = 28
 /** Keywords that identify a task as a candidate for the weekly-review pattern. */
 export const WEEKLY_REVIEW_KEYWORDS = ['review', 'weekly review', 'week review', 'retrospective', 'retro']
 
-/** Number of days since last activity on a goal before it is considered stale. */
+/** Number of days since last activity on a goal before it is considered stale.
+ *  Single source of truth per Wave 7.2.1 §Quality Requirements. */
 export const STALE_GOAL_THRESHOLD_DAYS = 14
 
 /** Number of days since the last task update before we flag follow-up needed. */
@@ -128,26 +131,46 @@ export function detectWeeklyReviewTime(
 }
 
 /**
- * Stale-goal detection.
+ * Stale-goal detection (pure, for unit testing).
  *
- * Returns goal ids where the last activity is older than STALE_GOAL_THRESHOLD_DAYS.
- * A goal with no last_activity_at that was created before the threshold is also stale.
+ * Examines goals with their most recent task completion timestamp.
+ * Returns stale goals with their exact inactivity day count.
+ *
+ * A goal is stale when:
+ *   - Its last linked task completion (last_task_completed_at) is older than
+ *     STALE_GOAL_THRESHOLD_DAYS, OR
+ *   - It has no linked completed tasks at all (last_task_completed_at is null)
+ *     AND was created more than STALE_GOAL_THRESHOLD_DAYS ago.
+ *
+ * Goals with status 'completed' or 'cancelled' are excluded.
  */
 export function detectStaleGoals(
-  goals: Array<{ id: string; title: string; last_activity_at: string | null; created_at: string; status: string }>,
+  goals: Array<{
+    id: string
+    title: string
+    last_task_completed_at: string | null
+    created_at: string
+    status: string
+  }>,
   now: Date = new Date(),
-): Array<{ id: string; title: string }> {
+): Array<{ id: string; title: string; daysSinceActivity: number }> {
   const cutoff = daysAgo(STALE_GOAL_THRESHOLD_DAYS, now)
+  const TERMINAL_STATUSES = new Set(['completed', 'cancelled'])
 
   return goals
-    .filter(g => g.status === 'active')
-    .filter(g => {
-      const activityDate = g.last_activity_at
-        ? new Date(g.last_activity_at)
+    .filter(g => !TERMINAL_STATUSES.has(g.status))
+    .flatMap(g => {
+      const activityDate = g.last_task_completed_at
+        ? new Date(g.last_task_completed_at)
         : new Date(g.created_at)
-      return activityDate < cutoff
+
+      if (activityDate >= cutoff) return []
+
+      const daysSinceActivity = Math.floor(
+        (now.getTime() - activityDate.getTime()) / (24 * 60 * 60 * 1000),
+      )
+      return [{ id: g.id, title: g.title, daysSinceActivity }]
     })
-    .map(g => ({ id: g.id, title: g.title }))
 }
 
 /**
@@ -169,7 +192,7 @@ export function detectFollowUpNeeded(
 }
 
 // ---------------------------------------------------------------------------
-// Helpers for description generation
+// Description generators
 // ---------------------------------------------------------------------------
 
 function gymDaysDescription(days: Array<{ weekday: number; count: number }>): string {
@@ -182,9 +205,9 @@ function weeklyReviewDescription(days: Array<{ weekday: number; count: number }>
   return `You consistently do your weekly review on ${names}`
 }
 
-function staleGoalDescription(goals: Array<{ title: string }>): string {
-  const titles = goals.map(g => `"${g.title}"`).join(', ')
-  return `Goal(s) with no recent activity: ${titles}`
+/** Per-goal stale description: "No activity on 'Read 12 books' for 18 days" */
+export function staleGoalDescription(title: string, daysSinceActivity: number): string {
+  return `No activity on '${title}' for ${daysSinceActivity} days`
 }
 
 function followUpDescription(tasks: Array<{ title: string }>): string {
@@ -206,13 +229,219 @@ export function hasSufficientHistory(totalCompletions: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Stale-goal DB detection (Wave 7.2.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw shape returned by the stale-goal SQL query.
+ * The Supabase JS client returns aggregate results as nullable fields.
+ */
+type StaleGoalRow = {
+  id: string
+  title: string
+  last_task_completed_at: string | null
+  created_at: string
+  status: string
+}
+
+/**
+ * Fetch goals with their most recent linked task completion timestamp.
+ *
+ * Uses a LEFT JOIN via Supabase's nested select to get the MAX completed_at
+ * per goal. Goals without any completed tasks have last_task_completed_at = null.
+ * Goals in terminal status (completed, cancelled) are excluded at the query layer.
+ *
+ * NOTE: Supabase JS does not support GROUP BY / HAVING directly; we fetch the
+ * per-goal task max via a nested select and filter in application code. This is
+ * consistent with the existing pattern in the codebase (e.g., briefing.ts) and
+ * keeps the logic testable as a pure function.
+ */
+async function fetchGoalsWithLastCompletion(
+  userId: string,
+  db: ReturnType<typeof createServiceClient>,
+): Promise<StaleGoalRow[]> {
+  // Fetch active (non-terminal) goals for this user
+  const { data: goals, error: goalsError } = await db
+    .from('goals')
+    .select('id, title, created_at, status')
+    .eq('user_id', userId)
+    .not('status', 'in', '("completed","cancelled")')
+
+  if (goalsError) {
+    throw new Error(`Failed to fetch goals for stale-goal detection (user ${userId}): ${goalsError.message}`)
+  }
+
+  if (!goals || goals.length === 0) return []
+
+  const goalIds = goals.map(g => g.id)
+
+  // Fetch max(completed_at) per goal — one row per goal_id
+  const { data: taskMaxRows, error: taskError } = await db
+    .from('tasks')
+    .select('goal_id, completed_at')
+    .in('goal_id', goalIds)
+    .not('completed_at', 'is', null)
+    .order('completed_at', { ascending: false })
+
+  if (taskError) {
+    throw new Error(`Failed to fetch task completions for stale-goal detection (user ${userId}): ${taskError.message}`)
+  }
+
+  // Build a map: goal_id → max(completed_at) string
+  const maxCompletedAt = new Map<string, string>()
+  for (const row of taskMaxRows ?? []) {
+    const gid = row.goal_id as string | null
+    const cat = row.completed_at as string | null
+    if (!gid || !cat) continue
+    const existing = maxCompletedAt.get(gid)
+    if (!existing || cat > existing) {
+      maxCompletedAt.set(gid, cat)
+    }
+  }
+
+  return goals.map(g => ({
+    id: g.id,
+    title: g.title,
+    created_at: g.created_at,
+    status: g.status,
+    last_task_completed_at: maxCompletedAt.get(g.id) ?? null,
+  }))
+}
+
+/**
+ * Detect stale goals and write per-goal rows to `detected_patterns`.
+ *
+ * Upsert semantics (idempotent):
+ *   - Stale goal → upsert row with is_active=true, updated description
+ *   - Goal that was stale but has resumed activity → set is_active=false
+ *
+ * The unique key for stale-goal rows is (user_id, 'stale_goal', goal_id) via
+ * a partial unique index added in migration 20260708200000.
+ *
+ * Returns { written, deactivated } counts.
+ *
+ * NOTE: The cold-start guard (hasSufficientHistory) does NOT apply to stale-goal
+ * detection — stale goals are relevant even when the user has few task completions,
+ * because the absence of completions is precisely what makes a goal stale.
+ */
+export async function runStaleGoalDetection(
+  userId: string,
+  now: Date = new Date(),
+): Promise<{ written: number; deactivated: number }> {
+  const db = createServiceClient()
+
+  // 1. Fetch goals with last completion timestamp
+  const goalRows = await fetchGoalsWithLastCompletion(userId, db)
+
+  // 2. Determine which goals are currently stale
+  const staleGoals = detectStaleGoals(goalRows, now)
+  const staleGoalIds = new Set(staleGoals.map(g => g.id))
+
+  // 3. Fetch existing stale_goal pattern rows for this user
+  const { data: existingStalePatterns, error: existingError } = await db
+    .from('detected_patterns')
+    .select('id, goal_id, is_active')
+    .eq('user_id', userId)
+    .eq('pattern_type', 'stale_goal')
+    .not('goal_id', 'is', null)
+
+  if (existingError) {
+    throw new Error(`Failed to fetch existing stale-goal patterns (user ${userId}): ${existingError.message}`)
+  }
+
+  const existingByGoalId = new Map<string, { id: string; is_active: boolean }>()
+  for (const row of existingStalePatterns ?? []) {
+    if (row.goal_id) {
+      existingByGoalId.set(row.goal_id as string, { id: row.id, is_active: row.is_active })
+    }
+  }
+
+  let written = 0
+  let deactivated = 0
+
+  // 4. Upsert one row per currently-stale goal
+  for (const goal of staleGoals) {
+    const description = staleGoalDescription(goal.title, goal.daysSinceActivity)
+
+    const { error: upsertError } = await db
+      .from('detected_patterns')
+      .upsert(
+        {
+          user_id: userId,
+          pattern_type: 'stale_goal',
+          goal_id: goal.id,
+          description,
+          last_detected_at: now.toISOString(),
+          is_active: true,
+          updated_at: now.toISOString(),
+        },
+        // Conflict target matches the partial unique index on (user_id, pattern_type, goal_id)
+        { onConflict: 'user_id,pattern_type,goal_id' },
+      )
+
+    if (upsertError) {
+      console.error(
+        JSON.stringify({
+          event: 'stale_goal_detection.upsert_error',
+          userId,
+          goalId: goal.id,
+          error: upsertError.message,
+        }),
+      )
+    } else {
+      written++
+    }
+  }
+
+  // 5. Deactivate stale-goal rows for goals that are no longer stale (activity resumed)
+  for (const [goalId, existing] of existingByGoalId.entries()) {
+    if (existing.is_active && !staleGoalIds.has(goalId)) {
+      const { error: deactivateError } = await db
+        .from('detected_patterns')
+        .update({ is_active: false, updated_at: now.toISOString() })
+        .eq('id', existing.id)
+        .eq('user_id', userId) // defense-in-depth on top of RLS
+
+      if (deactivateError) {
+        console.error(
+          JSON.stringify({
+            event: 'stale_goal_detection.deactivate_error',
+            userId,
+            patternId: existing.id,
+            goalId,
+            error: deactivateError.message,
+          }),
+        )
+      } else {
+        deactivated++
+      }
+    }
+  }
+
+  console.log(
+    JSON.stringify({
+      event: 'stale_goal_detection.complete',
+      userId,
+      staleGoalCount: staleGoals.length,
+      written,
+      deactivated,
+    }),
+  )
+
+  return { written, deactivated }
+}
+
+// ---------------------------------------------------------------------------
 // Main exported function
 // ---------------------------------------------------------------------------
 
 /**
- * Run all four pattern-detection checks for a single user.
+ * Run all pattern-detection checks for a single user.
  * Writes detected patterns to the database via idempotent upsert.
- * Deactivates patterns not re-confirmed in PATTERN_DEACTIVATE_AFTER_DAYS.
+ * Deactivates non-goal patterns not re-confirmed in PATTERN_DEACTIVATE_AFTER_DAYS.
+ *
+ * Stale-goal detection runs independently of the cold-start guard because
+ * the absence of task completions is itself a stale-goal signal.
  */
 export async function runPatternDetection(userId: string): Promise<PatternDetectionResult> {
   const db = createServiceClient()
@@ -245,23 +474,16 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
     throw new Error(`Failed to fetch in-progress tasks for user ${userId}: ${inProgressError.message}`)
   }
 
-  // Fetch active goals (for stale_goal)
-  const { data: activeGoals, error: goalsError } = await db
-    .from('goals')
-    .select('id, title, last_activity_at, created_at, status')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-
-  if (goalsError) {
-    throw new Error(`Failed to fetch active goals for user ${userId}: ${goalsError.message}`)
-  }
-
   const completions = (completedTasks ?? []) as Array<{ id: string; title: string; completed_at: string; updated_at: string; status: string }>
   const allInProgress = (inProgressTasks ?? []) as Array<{ id: string; title: string; updated_at: string; status: string }>
-  const goals = (activeGoals ?? []) as Array<{ id: string; title: string; last_activity_at: string | null; created_at: string; status: string }>
 
   // -------------------------------------------------------------------------
-  // 2. Cold-start guard
+  // 2. Run stale-goal detection (independent of cold-start guard)
+  // -------------------------------------------------------------------------
+  const { written: staleWritten, deactivated: staleDeactivated } = await runStaleGoalDetection(userId, now)
+
+  // -------------------------------------------------------------------------
+  // 3. Cold-start guard for habit/behavior patterns
   // -------------------------------------------------------------------------
   if (!hasSufficientHistory(completions.length)) {
     console.log(
@@ -272,11 +494,11 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
         threshold: GYM_DAYS_MIN_OCCURRENCES,
       }),
     )
-    return { userId, patternsWritten: 0, patternsDeactivated: 0 }
+    return { userId, patternsWritten: staleWritten, patternsDeactivated: staleDeactivated }
   }
 
   // -------------------------------------------------------------------------
-  // 3. Run detection logic
+  // 4. Run habit/behavior pattern detection
   // -------------------------------------------------------------------------
   type PatternCandidate = { pattern_type: string; description: string }
   const candidates: PatternCandidate[] = []
@@ -299,15 +521,6 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
     })
   }
 
-  // stale_goal — only include if there are stale goals
-  const staleGoals = detectStaleGoals(goals, now)
-  if (staleGoals.length > 0) {
-    candidates.push({
-      pattern_type: 'stale_goal',
-      description: staleGoalDescription(staleGoals),
-    })
-  }
-
   // follow_up_needed
   const followUpTasks = detectFollowUpNeeded(allInProgress, now)
   if (followUpTasks.length > 0) {
@@ -318,21 +531,22 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
   }
 
   // -------------------------------------------------------------------------
-  // 4. Fetch existing patterns for this user (for deactivation logic)
+  // 5. Fetch existing non-goal patterns for deactivation logic
   // -------------------------------------------------------------------------
   const { data: existingPatterns, error: existingError } = await db
     .from('detected_patterns')
     .select('id, pattern_type, last_detected_at, is_active')
     .eq('user_id', userId)
+    .is('goal_id', null) // only non-goal patterns are managed here
 
   if (existingError) {
     throw new Error(`Failed to fetch existing patterns for user ${userId}: ${existingError.message}`)
   }
 
   // -------------------------------------------------------------------------
-  // 5. Upsert detected patterns (idempotent on user_id, pattern_type)
+  // 6. Upsert detected non-goal patterns (idempotent on user_id, pattern_type where goal_id IS NULL)
   // -------------------------------------------------------------------------
-  let patternsWritten = 0
+  let patternsWritten = staleWritten
 
   for (const candidate of candidates) {
     const { error: upsertError } = await db
@@ -345,6 +559,7 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
           last_detected_at: now.toISOString(),
           is_active: true,
           updated_at: now.toISOString(),
+          // goal_id intentionally omitted — defaults to NULL for non-goal patterns
         },
         { onConflict: 'user_id,pattern_type' },
       )
@@ -365,7 +580,8 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
   }
 
   // -------------------------------------------------------------------------
-  // 6. Deactivate stale patterns (not re-confirmed in PATTERN_DEACTIVATE_AFTER_DAYS)
+  // 7. Deactivate non-goal patterns not re-confirmed in PATTERN_DEACTIVATE_AFTER_DAYS
+  //    (stale_goal rows are handled separately by runStaleGoalDetection)
   // -------------------------------------------------------------------------
   const detectedPatternTypes = new Set(candidates.map(c => c.pattern_type))
   const deactivateCutoff = daysAgo(PATTERN_DEACTIVATE_AFTER_DAYS, now)
@@ -377,7 +593,7 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
       new Date(p.last_detected_at) < deactivateCutoff,
   )
 
-  let patternsDeactivated = 0
+  let patternsDeactivated = staleDeactivated
 
   for (const pattern of toDeactivate) {
     const { error: deactivateError } = await db

@@ -43,6 +43,7 @@ export type Database = {
         Row: {
           created_at: string
           description: string
+          goal_id: string | null
           id: string
           is_active: boolean
           last_detected_at: string
@@ -54,6 +55,7 @@ export type Database = {
         Insert: {
           created_at?: string
           description: string
+          goal_id?: string | null
           id?: string
           is_active?: boolean
           last_detected_at?: string
@@ -65,6 +67,7 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string
+          goal_id?: string | null
           id?: string
           is_active?: boolean
           last_detected_at?: string
@@ -79,6 +82,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "detected_patterns_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
             referencedColumns: ["id"]
           }
         ]

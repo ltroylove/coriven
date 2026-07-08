@@ -25,6 +25,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'submit_for_approval',
   'get_email_thread',
   'detect_patterns',
+  'push_notification',
 ]
 
 export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
@@ -428,6 +429,33 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
         },
       },
       required: [],
+    },
+  },
+
+  push_notification: {
+    name: 'push_notification',
+    description:
+      'Send a proactive tray notification to the user on demand. ' +
+      'Use this when the user explicitly asks to be reminded about something at the next tray check. ' +
+      'The notification is picked up by the desktop tray on its next poll cycle and fired as a native OS notification. ' +
+      'Body must be 100 characters or fewer. Does not require user approval.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Short notification title shown in the OS notification header.',
+        },
+        body: {
+          type: 'string',
+          description: 'Notification body text. Maximum 100 characters. Longer bodies are rejected.',
+        },
+        pattern_type: {
+          type: 'string',
+          description: 'Optional pattern type to associate with this notification. Defaults to "push_notification".',
+        },
+      },
+      required: ['title', 'body'],
     },
   },
 

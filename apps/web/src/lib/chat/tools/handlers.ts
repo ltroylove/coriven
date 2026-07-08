@@ -522,6 +522,74 @@ async function handleSubmitForApproval(input: Input, userId: string): Promise<Ha
   }
 }
 
+/** Maximum body length for a push notification (native OS constraint, mirrors tray constant). */
+const PUSH_NOTIFICATION_MAX_BODY_CHARS = 100
+
+async function handlePushNotification(input: Input, userId: string): Promise<HandlerResult> {
+  const title = String(input.title ?? '').trim()
+  const body = String(input.body ?? '').trim()
+  const patternType = input.pattern_type ? String(input.pattern_type).trim() : 'push_notification'
+
+  if (!title) {
+    return { content: 'title is required.', is_error: true }
+  }
+  if (!body) {
+    return { content: 'body is required.', is_error: true }
+  }
+  if (body.length > PUSH_NOTIFICATION_MAX_BODY_CHARS) {
+    return {
+      content: `Notification body must be ${PUSH_NOTIFICATION_MAX_BODY_CHARS} characters or fewer (received ${body.length}). Please shorten the body and try again.`,
+      is_error: true,
+    }
+  }
+
+  const db = createServiceClient()
+  const now = new Date().toISOString()
+
+  // Insert a detected_patterns row with last_notified_at = null so the tray picks
+  // it up on the next poll cycle. This is an immediate insert (not an upsert) because
+  // push_notification rows are not deduplicated by goal — each call creates a new row.
+  const { data, error } = await db
+    .from('detected_patterns')
+    .insert({
+      user_id: userId,
+      pattern_type: patternType,
+      description: body,
+      last_detected_at: now,
+      last_notified_at: null,
+      is_active: true,
+      updated_at: now,
+      // goal_id intentionally null — push_notification is not goal-specific
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error(
+      JSON.stringify({
+        event: 'tool.push_notification.insert_error',
+        userId,
+        error: error.message,
+      }),
+    )
+    return { content: 'Failed to queue notification. Please try again.', is_error: true }
+  }
+
+  console.log(
+    JSON.stringify({
+      event: 'tool.push_notification.queued',
+      userId,
+      patternId: data.id,
+      patternType,
+    }),
+  )
+
+  return {
+    content: `Notification queued (id: ${data.id}). It will appear in the desktop tray on the next poll cycle.`,
+    is_error: false,
+  }
+}
+
 async function handleDetectPatterns(input: Input, userId: string): Promise<HandlerResult> {
   try {
     const db = createServiceClient()
@@ -578,6 +646,7 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   submit_for_approval: handleSubmitForApproval,
   get_email_thread: handleGetEmailThread,
   detect_patterns: handleDetectPatterns,
+  push_notification: handlePushNotification,
 }
 
 export async function executeToolHandler(
