@@ -22,6 +22,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'set_goal_momentum',
   'create_project',
   'generate_daily_briefing',
+  'generate_weekly_review',
   'submit_for_approval',
   'get_email_thread',
   'detect_patterns',
@@ -382,6 +383,24 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
     input_schema: {
       type: 'object',
       properties: {},
+      required: [],
+    },
+  },
+
+  generate_weekly_review: {
+    name: 'generate_weekly_review',
+    description:
+      'Returns the weekly review for the current ISO week: wins (tasks completed this week), blockers (overdue tasks and stalling goals), and next-week focus (top upcoming high-priority tasks). ' +
+      'By default returns the stored review for this week. Use force_regenerate=true to assemble a fresh review on demand.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        force_regenerate: {
+          type: 'boolean',
+          description:
+            'If true, assemble and store a fresh weekly review before returning. If false (default), return the most recent stored review for the current ISO week.',
+        },
+      },
       required: [],
     },
   },

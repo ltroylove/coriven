@@ -35,8 +35,8 @@ use tauri_plugin_opener::OpenerExt;
 /// The full row contains `content` (a complex JSON object with the actual
 /// briefing text). The tray MUST NOT render that content — it only reads
 /// `was_delivered` to decide whether to notify and `briefing_date` for logging.
-/// The `content` field is accepted (and ignored) so the parser doesn't reject
-/// valid server responses that include it.
+/// For weekly reviews the tray also reads `content.wins` length for the
+/// notification body — but only the array length, not the task titles.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BriefingRow {
     /// Unique row id — used for logging only.
@@ -46,16 +46,43 @@ pub struct BriefingRow {
     /// True once ANY surface has marked this briefing delivered.
     /// This is the server-side source of truth for exactly-once delivery.
     pub was_delivered: bool,
-    // `content`, `delivered_at`, etc. are present in the actual response but
-    // we intentionally omit them here — serde's default deny-unknown-fields
-    // is NOT set, so extra fields are silently ignored.
+    /// Briefing type: 'daily' or 'weekly'. Defaults to 'daily' when absent
+    /// (older rows before Wave 7.3.1 migration).
+    #[serde(default = "default_briefing_type")]
+    pub r#type: String,
+    /// Raw content JSON — parsed only for weekly reviews to extract wins count.
+    /// Typed as serde_json::Value to avoid a tight coupling to the content schema.
+    pub content: Option<serde_json::Value>,
 }
 
-/// The wrapper shape: `GET /api/briefing/today` returns `{ briefing: … | null }`.
+fn default_briefing_type() -> String {
+    "daily".to_string()
+}
+
+/// The wrapper shape: `GET /api/briefing/today` returns:
+/// - `{ briefing: … | null, briefings: […] }` (Wave 7.3.1 extended shape)
+/// - The tray processes `briefings` for multi-type support; falls back to the
+///   legacy `briefing` field when `briefings` is absent for backward compat.
 #[derive(Debug, Deserialize)]
 pub struct BriefingResponse {
-    /// `None` when no briefing exists for today (server returns `{ briefing: null }`).
+    /// Legacy field — the daily briefing for today (may be null).
+    /// Kept for backward compatibility.
     pub briefing: Option<BriefingRow>,
+    /// All briefings (daily + weekly) for the current user. Added in Wave 7.3.1.
+    /// May be absent on older server versions (backward compat).
+    #[serde(default)]
+    pub briefings: Vec<BriefingRow>,
+}
+
+/// Extract the wins count from a weekly review content JSON value.
+/// Returns 0 if the field is absent or not an array (safe default).
+pub fn wins_count_from_content(content: &Option<serde_json::Value>) -> usize {
+    content
+        .as_ref()
+        .and_then(|v| v.get("wins"))
+        .and_then(|wins| wins.as_array())
+        .map(|arr| arr.len())
+        .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -95,33 +122,23 @@ impl BriefingSessionGuard {
 // Fetch helpers
 // ---------------------------------------------------------------------------
 
-/// Fetch today's briefing row from the server.
-///
-/// If `mark_delivered` is true, the request includes `X-Mark-Delivered: true`
-/// so the server atomically marks the row delivered and returns the updated row.
+/// Fetch today's briefing envelope from the server.
 ///
 /// Returns:
-/// - `Ok(Some(row))` — briefing exists
-/// - `Ok(None)`       — no briefing today (404 / `{ briefing: null }`)
-/// - `Err(...)`       — network / auth / server error
+/// - `Ok(Some(envelope))` — one or more briefings exist
+/// - `Ok(None)`            — no briefings today (404 / empty response)
+/// - `Err(...)`            — network / auth / server error
 pub async fn fetch_briefing(
     api_base_url: &str,
     access_token: &str,
-    mark_delivered: bool,
-) -> Result<Option<BriefingRow>, BriefingFetchError> {
+) -> Result<Option<BriefingResponse>, BriefingFetchError> {
     let url = format!("{}/api/briefing/today", api_base_url);
     let client = reqwest::Client::new();
 
-    let mut req = client
+    let response = client
         .get(&url)
         // SECURITY: Bearer token in header only — never logged, never in URL.
-        .header("Authorization", format!("Bearer {access_token}"));
-
-    if mark_delivered {
-        req = req.header("X-Mark-Delivered", "true");
-    }
-
-    let response = req
+        .header("Authorization", format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|e| BriefingFetchError::Network(e.to_string()))?;
@@ -145,8 +162,43 @@ pub async fn fetch_briefing(
         .await
         .map_err(|e| BriefingFetchError::ParseError(e.to_string()))?;
 
-    // Unwrap the nullable inner briefing.
-    Ok(envelope.briefing)
+    // Return None if there are no briefings at all.
+    if envelope.briefings.is_empty() && envelope.briefing.is_none() {
+        return Ok(None);
+    }
+
+    Ok(Some(envelope))
+}
+
+/// POST to /api/briefing/[id]/deliver to mark a briefing as delivered server-side.
+///
+/// Returns Ok(()) on 2xx, Err on any other outcome.
+pub async fn post_deliver(
+    api_base_url: &str,
+    access_token: &str,
+    briefing_id: &str,
+) -> Result<(), BriefingFetchError> {
+    let url = format!("{}/api/briefing/{}/deliver", api_base_url, briefing_id);
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {access_token}"))
+        .header("Content-Length", "0")
+        .send()
+        .await
+        .map_err(|e| BriefingFetchError::Network(e.to_string()))?;
+
+    let status = response.status();
+
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(BriefingFetchError::Unauthorized);
+    }
+    if !status.is_success() {
+        return Err(BriefingFetchError::HttpError(status.as_u16()));
+    }
+
+    Ok(())
 }
 
 /// Error type for the briefing fetch. Intentionally coarse.
@@ -178,18 +230,10 @@ impl std::fmt::Display for BriefingFetchError {
 /// Called each poll cycle from `poll::run_poll_cycle`. The caller has already
 /// verified the signed-in gate; `token` and `api_base_url` are extracted there.
 ///
-/// Behavior:
-/// 1. Fetch today's briefing (no mark-delivered header on first probe).
-/// 2. If none → log and return (silence is correct).
-/// 3. If `was_delivered` is true → log and return (server says done).
-/// 4. If already notified this session (guard) → log and return.
-/// 5. Fire the notification.
-/// 6. Mark the guard (prevents double-fire even if step 7 fails offline).
-/// 7. Re-fetch with `X-Mark-Delivered: true` to persist delivery server-side.
-///    Failure here is logged and tolerated — the guard covers this session;
-///    the server flag may still be false and will be set on the next reconnect.
-/// 8. Open the today page deep-link is handled by notification click (the toast
-///    is informational; the `open_today` function is called from the tray event).
+/// Wave 7.3.1: Processes ALL briefings from `response.briefings` (daily + weekly).
+/// Each undelivered, un-guarded briefing fires exactly one notification.
+/// Weekly reviews fire: "Your weekly review is ready — N wins this week".
+/// Daily briefings fire: "Your daily briefing is ready / Tap to read…".
 ///
 /// The `app` is used only for notification dispatch and browser open — no DB.
 pub async fn run_briefing_poll(
@@ -201,10 +245,10 @@ pub async fn run_briefing_poll(
     eprintln!("[coriven-tray] briefing: polling /api/briefing/today");
 
     // Step 1: probe (no mark-delivered).
-    let row = match fetch_briefing(api_base_url, token, false).await {
-        Ok(Some(r)) => r,
+    let envelope = match fetch_briefing(api_base_url, token).await {
+        Ok(Some(e)) => e,
         Ok(None) => {
-            eprintln!("[coriven-tray] briefing: no briefing today — nothing to notify");
+            eprintln!("[coriven-tray] briefing: no briefings today — nothing to notify");
             return;
         }
         Err(BriefingFetchError::Unauthorized) => {
@@ -220,61 +264,95 @@ pub async fn run_briefing_poll(
         }
     };
 
+    // Collect all rows to process: prefer `briefings` (Wave 7.3.1 multi-type),
+    // fall back to the legacy `briefing` field for backward compat.
+    let rows: Vec<BriefingRow> = if !envelope.briefings.is_empty() {
+        envelope.briefings
+    } else if let Some(row) = envelope.briefing {
+        vec![row]
+    } else {
+        eprintln!("[coriven-tray] briefing: empty briefings payload — nothing to notify");
+        return;
+    };
+
+    for row in rows {
+        notify_single_briefing(app, session_guard, token, api_base_url, row).await;
+    }
+}
+
+/// Process a single briefing row: check delivery state, fire notification,
+/// mark delivered via the deliver endpoint.
+async fn notify_single_briefing(
+    app: &AppHandle,
+    session_guard: &mut BriefingSessionGuard,
+    token: &str,
+    api_base_url: &str,
+    row: BriefingRow,
+) {
     eprintln!(
-        "[coriven-tray] briefing: found briefing id={} date={} was_delivered={}",
-        row.id, row.briefing_date, row.was_delivered
+        "[coriven-tray] briefing: found briefing id={} type={} date={} was_delivered={}",
+        row.id, row.r#type, row.briefing_date, row.was_delivered
     );
 
-    // Step 3: server says already delivered.
+    // Server says already delivered.
     if row.was_delivered {
-        eprintln!("[coriven-tray] briefing: already delivered (server flag) — silent");
+        eprintln!("[coriven-tray] briefing: id={} already delivered (server flag) — silent", row.id);
         return;
     }
 
-    // Step 4: session guard (offline protection for mark-delivered failure).
+    // Session guard (offline protection for mark-delivered failure).
     if session_guard.already_notified(&row.id) {
         eprintln!(
-            "[coriven-tray] briefing: already notified this session id={} — silent",
+            "[coriven-tray] briefing: id={} already notified this session — silent",
             row.id
         );
         return;
     }
 
-    // Step 5: fire the notification.
-    // Title is generic — no briefing content goes into the toast (thin-shell rule).
-    let title = "Your daily briefing is ready";
-    let body = format!("Tap to read your briefing for {}", row.briefing_date);
+    // Build notification text based on type.
+    let (title, body) = if row.r#type == "weekly" {
+        let wins = wins_count_from_content(&row.content);
+        let wins_label = if wins == 1 { "1 win".to_string() } else { format!("{wins} wins") };
+        (
+            "Your weekly review is ready".to_string(),
+            format!("{wins_label} this week"),
+        )
+    } else {
+        (
+            "Your daily briefing is ready".to_string(),
+            format!("Tap to read your briefing for {}", row.briefing_date),
+        )
+    };
 
-    // We pass a dummy NotificationMeta with empty fields — briefing notifications
-    // don't need the reminder-action routing that NotificationMeta supports.
-    // We call the notification plugin directly here to keep the meta orthogonal.
+    // Fire the notification.
     use tauri_plugin_notification::NotificationExt;
     match app
         .notification()
         .builder()
-        .title(title)
+        .title(&title)
         .body(&body)
         .show()
     {
         Ok(()) => {
             eprintln!(
-                "[coriven-tray] briefing: notification fired for id={}",
-                row.id
+                "[coriven-tray] briefing: notification fired for id={} type={}",
+                row.id, row.r#type
             );
         }
         Err(e) => {
-            eprintln!("[coriven-tray] briefing: notification dispatch failed: {e}");
+            eprintln!("[coriven-tray] briefing: notification dispatch failed for id={}: {e}", row.id);
             // Do NOT mark guard or call mark-delivered — we didn't actually notify.
             return;
         }
     }
 
-    // Step 6: mark the session guard immediately after firing.
+    // Mark the session guard immediately after firing.
     session_guard.mark_notified(row.id.clone());
 
-    // Step 7: mark delivered server-side. Failure is tolerated (offline resilience).
-    match fetch_briefing(api_base_url, token, true).await {
-        Ok(_) => {
+    // Mark delivered server-side via the deliver endpoint.
+    // Failure is tolerated (offline resilience) — session guard covers this session.
+    match post_deliver(api_base_url, token, &row.id).await {
+        Ok(()) => {
             eprintln!(
                 "[coriven-tray] briefing: server-side delivered flag set for id={}",
                 row.id
@@ -282,12 +360,9 @@ pub async fn run_briefing_poll(
         }
         Err(e) => {
             eprintln!(
-                "[coriven-tray] briefing: mark-delivered failed ({e}) — session guard active; will retry on reconnect"
+                "[coriven-tray] briefing: mark-delivered failed for id={} ({e}) — session guard active; will retry on reconnect",
+                row.id
             );
-            // The session guard prevents double-fire this session.
-            // On next tray start, the server flag will still be false, and the
-            // user may receive a second notification on a fresh session — which is
-            // acceptable per the wave spec's offline tolerance clause.
         }
     }
 }
@@ -497,5 +572,122 @@ mod tests {
             assert!(!s.contains("Bearer"));
             assert!(!s.contains("token"));
         }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Wave 7.3.1: Weekly review — wins_count_from_content
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn wins_count_zero_when_content_none() {
+        assert_eq!(wins_count_from_content(&None), 0);
+    }
+
+    #[test]
+    fn wins_count_zero_when_wins_absent() {
+        let v: serde_json::Value = serde_json::json!({ "blockers": [] });
+        assert_eq!(wins_count_from_content(&Some(v)), 0);
+    }
+
+    #[test]
+    fn wins_count_returns_array_length() {
+        let v: serde_json::Value = serde_json::json!({
+            "wins": [
+                { "taskId": "t1", "title": "Task A" },
+                { "taskId": "t2", "title": "Task B" }
+            ]
+        });
+        assert_eq!(wins_count_from_content(&Some(v)), 2);
+    }
+
+    #[test]
+    fn wins_count_zero_when_wins_not_array() {
+        let v: serde_json::Value = serde_json::json!({ "wins": "not-an-array" });
+        assert_eq!(wins_count_from_content(&Some(v)), 0);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Wave 7.3.1: BriefingRow type field deserialization
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn briefing_row_type_defaults_to_daily() {
+        let json = r#"{
+            "id": "brf-010",
+            "briefing_date": "2026-07-08",
+            "was_delivered": false
+        }"#;
+        let row: BriefingRow = serde_json::from_str(json).unwrap();
+        assert_eq!(row.r#type, "daily");
+    }
+
+    #[test]
+    fn briefing_row_type_weekly_deserialises() {
+        let json = r#"{
+            "id": "brf-011",
+            "briefing_date": "2026-07-07",
+            "was_delivered": false,
+            "type": "weekly",
+            "content": { "wins": [{"taskId": "t1", "title": "Win A"}], "blockers": [], "nextWeek": [] }
+        }"#;
+        let row: BriefingRow = serde_json::from_str(json).unwrap();
+        assert_eq!(row.r#type, "weekly");
+        assert_eq!(wins_count_from_content(&row.content), 1);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Wave 7.3.1: BriefingResponse multi-type deserialization
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn briefing_response_deserialises_briefings_array() {
+        let json = r#"{
+            "briefing": null,
+            "briefings": [
+                { "id": "brf-020", "briefing_date": "2026-07-08", "was_delivered": false, "type": "daily" },
+                { "id": "brf-021", "briefing_date": "2026-07-07", "was_delivered": false, "type": "weekly",
+                  "content": { "wins": [{"taskId": "t1", "title": "W"}], "blockers": [], "nextWeek": [] } }
+            ]
+        }"#;
+        let resp: BriefingResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.briefing.is_none());
+        assert_eq!(resp.briefings.len(), 2);
+        assert_eq!(resp.briefings[0].r#type, "daily");
+        assert_eq!(resp.briefings[1].r#type, "weekly");
+        assert_eq!(wins_count_from_content(&resp.briefings[1].content), 1);
+    }
+
+    #[test]
+    fn briefing_response_briefings_defaults_empty() {
+        // Old-shape response (no briefings field) should default briefings to [].
+        let json = r#"{ "briefing": { "id": "brf-030", "briefing_date": "2026-07-08", "was_delivered": false } }"#;
+        let resp: BriefingResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.briefings.len(), 0);
+        assert!(resp.briefing.is_some());
+    }
+
+    // ---------------------------------------------------------------------------
+    // Wave 7.3.1: Weekly notification body text
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn weekly_notification_body_singular_win() {
+        let wins = 1usize;
+        let label = if wins == 1 { "1 win".to_string() } else { format!("{wins} wins") };
+        assert_eq!(label, "1 win");
+    }
+
+    #[test]
+    fn weekly_notification_body_plural_wins() {
+        let wins = 4usize;
+        let label = if wins == 1 { "1 win".to_string() } else { format!("{wins} wins") };
+        assert_eq!(label, "4 wins");
+    }
+
+    #[test]
+    fn weekly_notification_body_zero_wins() {
+        let wins = 0usize;
+        let label = if wins == 1 { "1 win".to_string() } else { format!("{wins} wins") };
+        assert_eq!(label, "0 wins");
     }
 }

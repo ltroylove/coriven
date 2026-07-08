@@ -2,8 +2,10 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { BriefingSection } from '@/components/briefing/briefing-section'
+import { WeeklyReviewSection } from '@/components/briefing/weekly-review-section'
 import type { BriefingContent } from '@/lib/jobs/briefing'
 import type { MeetingBriefContent } from '@/lib/jobs/meeting-prep'
+import type { WeeklyReviewContent } from '@personal-assistant/types'
 
 // ---------------------------------------------------------------------------
 // MeetingPrepSection
@@ -126,6 +128,23 @@ export default async function TodayPage() {
     .eq('briefing_date', today)
     .maybeSingle()
 
+  // Weekly review — query for the current ISO week's review
+  // The weekly review is stored with briefing_date = ISO week-start Monday (UTC).
+  const nowUtc = new Date()
+  const dayOfWeek = nowUtc.getUTCDay() // 0 = Sun, 1 = Mon, …
+  const daysToMonday = (dayOfWeek + 6) % 7
+  const weekStartUtc = new Date(nowUtc)
+  weekStartUtc.setUTCDate(weekStartUtc.getUTCDate() - daysToMonday)
+  const weekStartDate = weekStartUtc.toISOString().slice(0, 10)
+
+  const { data: weeklyBriefing } = await supabase
+    .from('daily_briefings')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('type', 'weekly')
+    .eq('briefing_date', weekStartDate)
+    .maybeSingle()
+
   // Meeting prep — briefs for events starting in the next 2 hours
   const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000)
   const { data: meetingBriefs } = await supabase
@@ -141,7 +160,12 @@ export default async function TodayPage() {
     return <div>Couldn&apos;t load your briefing. Try refreshing.</div>
   }
 
-  // No briefing for today — empty state (still show meeting prep if available)
+  // Resolve optional weekly review content for rendering
+  const weeklyReviewContent = weeklyBriefing
+    ? (weeklyBriefing.content as unknown as WeeklyReviewContent)
+    : null
+
+  // No briefing for today — empty state (still show meeting prep + weekly review if available)
   if (!briefing) {
     return (
       <div>
@@ -159,6 +183,17 @@ export default async function TodayPage() {
             .
           </p>
         </div>
+        {weeklyReviewContent && weeklyBriefing && (
+          <div className="mt-8">
+            <WeeklyReviewSection
+              wins={weeklyReviewContent.wins}
+              blockers={weeklyReviewContent.blockers}
+              nextWeek={weeklyReviewContent.nextWeek}
+              narrative={weeklyReviewContent.narrative}
+              generatedAt={weeklyBriefing.created_at}
+            />
+          </div>
+        )}
         <MeetingPrepSection briefs={meetingBriefs ?? []} />
       </div>
     )
@@ -260,6 +295,19 @@ export default async function TodayPage() {
           emptyMessage="No approvals pending."
         />
       </div>
+
+      {/* Weekly review — only rendered when a review exists for the current ISO week */}
+      {weeklyReviewContent && weeklyBriefing && (
+        <div className="mt-8">
+          <WeeklyReviewSection
+            wins={weeklyReviewContent.wins}
+            blockers={weeklyReviewContent.blockers}
+            nextWeek={weeklyReviewContent.nextWeek}
+            narrative={weeklyReviewContent.narrative}
+            generatedAt={weeklyBriefing.created_at}
+          />
+        </div>
+      )}
 
       {/* Meeting prep — only rendered when briefs exist */}
       {(meetingBriefs ?? []).length > 0 && (

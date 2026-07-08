@@ -1,7 +1,8 @@
 import { createServiceClient } from '@/lib/supabase/server'
-import type { ToolName, TaskPriority, TaskStatus, RecurrenceType } from '@personal-assistant/types'
+import type { ToolName, TaskPriority, TaskStatus, RecurrenceType, WeeklyReviewContent } from '@personal-assistant/types'
 import type { Database } from '@/types/supabase'
 import { assembleBriefing } from '@/lib/jobs/briefing'
+import { assembleWeeklyReview, storeWeeklyReview, getIsoWeekStart } from '@/lib/jobs/weekly-review'
 import { fetchEmailBody } from '@/lib/email/providers'
 import { neutralizeUntrustedOutput } from '@/lib/security/egress'
 
@@ -622,6 +623,125 @@ async function handleDetectPatterns(input: Input, userId: string): Promise<Handl
   }
 }
 
+async function handleGenerateWeeklyReview(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    const forceRegenerate = Boolean(input.force_regenerate ?? false)
+    const now = new Date()
+    const weekStart = getIsoWeekStart(now)
+
+    let content: WeeklyReviewContent | null = null
+
+    if (!forceRegenerate) {
+      // Return stored review for the current ISO week
+      const { data: row, error } = await db
+        .from('daily_briefings')
+        .select('content, created_at, briefing_date')
+        .eq('user_id', userId)
+        .eq('type', 'weekly')
+        .eq('briefing_date', weekStart)
+        .maybeSingle()
+
+      if (error) {
+        console.error('[handleGenerateWeeklyReview] DB error', { userId, error: error.message })
+        return { content: 'Failed to retrieve weekly review. Please try again.', is_error: true }
+      }
+
+      if (!row) {
+        return {
+          content:
+            'No weekly review has been generated for this ISO week yet. ' +
+            'The Friday 5pm cron assembles it automatically. ' +
+            'You can also ask me to regenerate it now by saying "generate a fresh weekly review".',
+          is_error: false,
+        }
+      }
+
+      content = row.content as unknown as WeeklyReviewContent
+      const generatedDate = new Date(row.created_at).toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })
+
+      return {
+        content: formatWeeklyReviewForChat(content, generatedDate),
+        is_error: false,
+      }
+    }
+
+    // force_regenerate = true: assemble fresh, store, then return
+    content = await assembleWeeklyReview(userId, now)
+    await storeWeeklyReview(userId, content, now)
+
+    const generatedDate = now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+    })
+
+    console.log(JSON.stringify({ event: 'tool.generate_weekly_review.fresh', userId }))
+
+    return {
+      content: formatWeeklyReviewForChat(content, generatedDate),
+      is_error: false,
+    }
+  } catch (err) {
+    console.error('[handleGenerateWeeklyReview] unexpected error', { userId, err })
+    return { content: 'Failed to generate weekly review. Please try again.', is_error: true }
+  }
+}
+
+/** Format WeeklyReviewContent as a readable chat summary string. */
+function formatWeeklyReviewForChat(content: WeeklyReviewContent, generatedDate: string): string {
+  const lines: string[] = [`**Weekly Review** — generated ${generatedDate}`, '']
+
+  // Narrative paragraph (optional)
+  if (content.narrative) {
+    lines.push(content.narrative, '')
+  }
+
+  // Wins
+  lines.push(`**Wins (${content.wins.length})**`)
+  if (content.wins.length === 0) {
+    lines.push('No completed tasks this week.')
+  } else {
+    for (const win of content.wins) {
+      const goalPart = win.goalTitle ? ` *(${win.goalTitle})*` : ''
+      lines.push(`- ${win.title}${goalPart}`)
+    }
+  }
+  lines.push('')
+
+  // Blockers
+  lines.push(`**Blockers (${content.blockers.length})**`)
+  if (content.blockers.length === 0) {
+    lines.push('No blockers — clean slate.')
+  } else {
+    for (const blocker of content.blockers) {
+      lines.push(`- ${blocker.title}: ${blocker.detail}`)
+    }
+  }
+  lines.push('')
+
+  // Next-week focus
+  lines.push(`**Next-Week Focus (${content.nextWeek.length})**`)
+  if (content.nextWeek.length === 0) {
+    lines.push('No high-priority tasks due next week.')
+  } else {
+    for (const task of content.nextWeek) {
+      const due = new Date(task.dueAt).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      })
+      lines.push(`- ${task.title} *(${task.priority}, due ${due})*`)
+    }
+  }
+
+  return lines.join('\n')
+}
+
 const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<HandlerResult>> = {
   create_task: handleCreateTask,
   update_task: handleUpdateTask,
@@ -643,6 +763,7 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   set_goal_momentum: handleSetGoalMomentum,
   create_project: handleCreateProject,
   generate_daily_briefing: handleGenerateDailyBriefing,
+  generate_weekly_review: handleGenerateWeeklyReview,
   submit_for_approval: handleSubmitForApproval,
   get_email_thread: handleGetEmailThread,
   detect_patterns: handleDetectPatterns,
