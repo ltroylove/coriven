@@ -49,20 +49,20 @@ The current UI is functional and sufficient for testing but is generic (plain Ta
 
 ## Scheduling & Notifications
 
-### BL-004 — Timezone-aware cron scheduling
-**Area:** Epic 7 (Proactive Intelligence) / `vercel.json` cron config + Settings UI
+### BL-004 — User timezone preference and local time display
+**Area:** Epic 7 (Proactive Intelligence) / Settings UI + all time-surfacing surfaces
 
-The cron expressions in `vercel.json` are hardcoded UTC times. All data is correctly stored in UTC and displayed as local time — that's not the issue. The problem is purely that the cron fires at a UTC time that doesn't correspond to the user's preferred local delivery time (e.g. "Friday 5pm" or "9pm nightly"), so notifications arrive at the wrong hour.
+Standard UTC + offset pattern: everything is stored and scheduled in UTC internally. When surfacing any time to the user, apply their timezone offset so they always see their local time. When the user inputs a time (e.g. "notify me at 5pm"), convert to UTC for storage and scheduling — the user never sees UTC.
 
-**The fix:**
+**What's needed:**
 
 1. **Capture timezone in Settings** — add a timezone field to the settings page, pre-filled from the browser (`Intl.DateTimeFormat().resolvedOptions().timeZone`). Store as an IANA string (e.g. `America/Chicago`) in `profiles.timezone`.
 
-2. **Rewrite cron expressions to match** — compute the UTC equivalent of each desired local trigger time and update the cron schedules in `vercel.json`. The user configures their local time; the UTC math is invisible.
+2. **Apply offset everywhere times are shown** — briefings, task due dates, notification history, cron trigger times in settings — all display in the user's local time.
 
-**Multi-user note (future constraint):** a single global Vercel Cron schedule can't mean "9pm local" for two users in different timezones at the same time. When there are multiple users, the fix is an hourly cron that checks per user whether their desired local trigger time has been crossed since the last run.
+3. **Cron schedules use the UTC equivalent** — user sets a preferred notification time in local; that gets converted to UTC and used as the cron expression. To the user it always looks like their local time.
 
-**Why:** The cron firing at the wrong local time means notifications arrive at 3am. One-time fix: get the timezone, update the UTC cron expression.
+**Multi-user note (future):** a single Vercel Cron schedule can't mean "5pm local" for two users in different timezones simultaneously. Per-user scheduling comes later; for now one user means one UTC equivalent.
 
 ---
 
