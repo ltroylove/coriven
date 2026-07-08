@@ -9,13 +9,13 @@ status: Planning
 domain: implementation
 product:
   - coriven
-epic: "6"
+epic: "7"
 feature: "7.3"
 wave: "7.3.1"
 agents: []
 tags: [coriven, proactive, weekly-review, daily-briefings, cron, tray, deterministic-assembly]
 relateddocuments:
-  - "docs/implementation/_main/epic-6-proactive-intelligence.md"
+  - "docs/implementation/_main/epic-7-proactive-intelligence.md"
   - "docs/architecture/_main/04-Architecture.md"
   - "docs/architecture/_main/03-Business-Requirements.md"
   - "docs/architecture/_main/05-User-Experience.md"
@@ -29,9 +29,9 @@ relateddocuments:
 
 | Field | Value |
 |---|---|
-| Wave ID | 6.3.1 |
-| Feature | 6.3 — Weekly Review |
-| Epic | 6 — Proactive Intelligence |
+| Wave ID | 7.3.1 |
+| Feature | 7.3 — Weekly Review |
+| Epic | 7 — Proactive Intelligence |
 | Status | Planning |
 | Scope | Implement a Friday 5pm Vercel Cron job that assembles a structured week-in-review (wins, blockers, next-week focus) from task and goal history; store the result as a `daily_briefings` row with `type = 'weekly'`; deliver it via the existing tray poll; expose it via the `generate_weekly_review` tool |
 
@@ -45,7 +45,7 @@ relateddocuments:
 
 ## User Stories
 
-### Story 6.3.1.1 — Friday cron assembles and stores an accurate weekly review
+### Story 7.3.1.1 — Friday cron assembles and stores an accurate weekly review
 
 **As the** Briefing Cron actor,
 **I want** to assemble a structured week-in-review from task and goal history every Friday at 5pm and persist it to `daily_briefings`,
@@ -68,27 +68,27 @@ relateddocuments:
 **Estimated hours:** 8h
 **Business Requirements:** Feature 8, UC-38 (Weekly review Fri 5pm)
 
-#### Task 6.3.1.1.1 — Implement weekly review assembly library
+#### Task 7.3.1.1.1 — Implement weekly review assembly library
 
-- **Parent Story:** 6.3.1.1
+- **Parent Story:** 7.3.1.1
 - **Agent:** Backend Engineer
 - **Estimation:** 6h
 - **Dependencies:** Epic 4 `goals`, `tasks`, `profiles` (timezone), `daily_briefings` tables; `profiles.timezone` field
 - **Deliverables:** `apps/web/src/lib/jobs/weekly-review.ts` — exported `assembleWeeklyReview(userId: string): Promise<WeeklyReviewContent>` and `storeWeeklyReview(userId: string, content: WeeklyReviewContent): Promise<void>`; type definition `WeeklyReviewContent` in `@personal-assistant/types`
 - **Acceptance Criteria:** Wins query counts tasks completed in the past 7 days correctly (boundary-tested at 6 days 23 hours vs. 7 days 1 hour); blockers query returns overdue tasks; next-week focus returns at most 5 tasks ordered by priority then due date; optional Haiku phrasing is wrapped in a try/catch and failures do not prevent the review from being stored; idempotent upsert on `(user_id, type, briefing_date-week)`; no hardcoded model IDs — sourced from the model-routing constants already in `lib/anthropic.ts`.
 
-#### Task 6.3.1.1.2 — Implement weekly review cron endpoint and Vercel Cron config
+#### Task 7.3.1.1.2 — Implement weekly review cron endpoint and Vercel Cron config
 
-- **Parent Story:** 6.3.1.1
+- **Parent Story:** 7.3.1.1
 - **Agent:** Backend Engineer
 - **Estimation:** 2h
-- **Dependencies:** Task 6.3.1.1.1
+- **Dependencies:** Task 7.3.1.1.1
 - **Deliverables:** `apps/web/src/app/api/cron/weekly-review/route.ts`; updated `vercel.json` cron schedule; updated `.env.example` if any new env vars added
 - **Acceptance Criteria:** `POST /api/cron/weekly-review` validates `CRON_SECRET`; returns HTTP 200 with `{ usersProcessed, reviewsStored }` on success; returns HTTP 401 on bad secret; returns HTTP 500 with logged error on failure; Vercel Cron schedule entry for Friday 5pm UTC (or adjusted per user timezone offset strategy).
 
 ---
 
-### Story 6.3.1.2 — Tray delivers the weekly review notification on Friday
+### Story 7.3.1.2 — Tray delivers the weekly review notification on Friday
 
 **As the** Primary User,
 **I want** to receive a tray notification on Friday evening when my weekly review is ready,
@@ -106,27 +106,27 @@ relateddocuments:
 **Estimated hours:** 4h
 **Business Requirements:** Feature 8, UC-38; UX Today/Briefing screen
 
-#### Task 6.3.1.2.1 — Extend briefing poll endpoint to include weekly review
+#### Task 7.3.1.2.1 — Extend briefing poll endpoint to include weekly review
 
-- **Parent Story:** 6.3.1.2
+- **Parent Story:** 7.3.1.2
 - **Agent:** Backend Engineer
 - **Estimation:** 2h
-- **Dependencies:** Task 6.3.1.1.1 (weekly review stored in `daily_briefings`); existing `/api/briefing/today` endpoint
+- **Dependencies:** Task 7.3.1.1.1 (weekly review stored in `daily_briefings`); existing `/api/briefing/today` endpoint
 - **Deliverables:** Updated `apps/web/src/app/api/briefing/today/route.ts` (or equivalent) to also return undelivered `type = 'weekly'` rows; a `POST /api/briefing/[id]/deliver` endpoint (or equivalent) to mark `was_delivered = true`
 - **Acceptance Criteria:** Endpoint returns both daily and weekly briefing rows; `was_delivered` transition works correctly; RLS enforced; duplicate delivery prevented by checking `was_delivered` before returning.
 
-#### Task 6.3.1.2.2 — Tray handles weekly review notification type
+#### Task 7.3.1.2.2 — Tray handles weekly review notification type
 
-- **Parent Story:** 6.3.1.2
+- **Parent Story:** 7.3.1.2
 - **Agent:** Backend / Tray Engineer
 - **Estimation:** 2h
-- **Dependencies:** Task 6.3.1.2.1
+- **Dependencies:** Task 7.3.1.2.1
 - **Deliverables:** Updated `apps/tray/src/notifier.ts` (or Tauri equivalent) with a `notifyWeeklyReview` function; updated poll loop to handle weekly briefing type
 - **Acceptance Criteria:** Tray detects `type = 'weekly'` briefing with `was_delivered = false`; fires notification with wins count; calls the deliver endpoint; subsequent polls do not re-fire; errors logged without crashing the reminder poll.
 
 ---
 
-### Story 6.3.1.3 — Weekly review section appears in the Today/Briefing UI on Fridays
+### Story 7.3.1.3 — Weekly review section appears in the Today/Briefing UI on Fridays
 
 **As the** Primary User,
 **I want** to see my weekly review in the Today/Briefing screen when I open the web app on Friday,
@@ -145,18 +145,18 @@ relateddocuments:
 **Estimated hours:** 5h
 **Business Requirements:** Feature 8, UC-38; UX Today/Briefing screen
 
-#### Task 6.3.1.3.1 — Add weekly review section to Today/Briefing page
+#### Task 7.3.1.3.1 — Add weekly review section to Today/Briefing page
 
-- **Parent Story:** 6.3.1.3
+- **Parent Story:** 7.3.1.3
 - **Agent:** Frontend Engineer
 - **Estimation:** 5h
-- **Dependencies:** Task 6.3.1.2.1 (briefing endpoint returns weekly type); existing briefing page component
+- **Dependencies:** Task 7.3.1.2.1 (briefing endpoint returns weekly type); existing briefing page component
 - **Deliverables:** Updated `apps/web/src/app/today/page.tsx` (or equivalent briefing page) with a `WeeklyReviewSection` component; `WeeklyReviewSection` component file
 - **Acceptance Criteria:** Component renders wins, blockers, and next-week sections from the JSON content; component is absent when no weekly review exists; keyboard navigation works (tab through list items); screen reader reads section heading and list items; component uses Tailwind CSS 4; no hardcoded data.
 
 ---
 
-### Story 6.3.1.4 — `generate_weekly_review` tool surfaces the weekly review in chat
+### Story 7.3.1.4 — `generate_weekly_review` tool surfaces the weekly review in chat
 
 **As the** Primary User,
 **I want** to ask Coriven in chat to give me my weekly review at any time,
@@ -174,12 +174,12 @@ relateddocuments:
 **Estimated hours:** 4h
 **Business Requirements:** Feature 8
 
-#### Task 6.3.1.4.1 — Add `generate_weekly_review` to tool registry and handler
+#### Task 7.3.1.4.1 — Add `generate_weekly_review` to tool registry and handler
 
-- **Parent Story:** 6.3.1.4
+- **Parent Story:** 7.3.1.4
 - **Agent:** Backend Engineer
 - **Estimation:** 4h
-- **Dependencies:** Task 6.3.1.1.1 (assembly library); existing tool registry pattern
+- **Dependencies:** Task 7.3.1.1.1 (assembly library); existing tool registry pattern
 - **Deliverables:** Updated `apps/web/src/lib/chat/tools/registry.ts`; updated `handlers.ts`; updated `ToolName` type
 - **Acceptance Criteria:** Tool appears in registry with valid JSON Schema; handler queries `daily_briefings` for `type = 'weekly'` with correct `user_id` filter; `force_regenerate = true` invokes assembly library; no-review-found case returns a clear, non-fabricated message; tool seeded into `tool_permissions` for existing users.
 
@@ -190,15 +190,15 @@ relateddocuments:
 ```
 Epic 4 (goals, tasks, profiles.timezone, daily_briefings) — prerequisite
 
-6.3.1.1.1  (assembly library)
-    └─► 6.3.1.1.2  (cron endpoint + Vercel config)
-    └─► 6.3.1.2.1  (extend briefing poll endpoint)
-           └─► 6.3.1.2.2  (tray handles weekly type)
-    └─► 6.3.1.3.1  (Today/Briefing UI section)   [needs endpoint from 6.3.1.2.1]
-    └─► 6.3.1.4.1  (generate_weekly_review tool)
+7.3.1.1.1  (assembly library)
+    └─► 7.3.1.1.2  (cron endpoint + Vercel config)
+    └─► 7.3.1.2.1  (extend briefing poll endpoint)
+           └─► 7.3.1.2.2  (tray handles weekly type)
+    └─► 7.3.1.3.1  (Today/Briefing UI section)   [needs endpoint from 7.3.1.2.1]
+    └─► 7.3.1.4.1  (generate_weekly_review tool)
 ```
 
-**Critical path:** Assembly library (6.3.1.1.1) → cron endpoint (6.3.1.1.2) + briefing poll extension (6.3.1.2.1). UI, tray, and tool tasks parallelize after the assembly library is done.
+**Critical path:** Assembly library (7.3.1.1.1) → cron endpoint (7.3.1.1.2) + briefing poll extension (7.3.1.2.1). UI, tray, and tool tasks parallelize after the assembly library is done.
 
 ## Definition of Done
 
@@ -352,7 +352,7 @@ interface WeeklyReviewSectionProps {
 
 ## Related Documentation
 
-- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 7.3
+- Epic: `docs/implementation/_main/epic-7-proactive-intelligence.md` — Feature 7.3
 - Architecture: `docs/architecture/_main/04-Architecture.md` — §14.4 (`daily_briefings`), jobs/cron, ADR-008 (deterministic-assembly ethos)
 - ADR-010: `docs/architecture/decisions/ADR-010-scheduled-proactive-jobs.md`
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` — Feature 8, UC-38

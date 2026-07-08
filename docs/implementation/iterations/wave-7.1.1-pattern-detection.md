@@ -9,13 +9,13 @@ status: Planning
 domain: implementation
 product:
   - coriven
-epic: "6"
+epic: "7"
 feature: "7.1"
 wave: "7.1.1"
 agents: []
 tags: [coriven, proactive, pattern-detection, cron, detected-patterns, tray, notifications]
 relateddocuments:
-  - "docs/implementation/_main/epic-6-proactive-intelligence.md"
+  - "docs/implementation/_main/epic-7-proactive-intelligence.md"
   - "docs/architecture/_main/04-Architecture.md"
   - "docs/architecture/_main/03-Business-Requirements.md"
   - "docs/architecture/_main/05-User-Experience.md"
@@ -29,9 +29,9 @@ relateddocuments:
 
 | Field | Value |
 |---|---|
-| Wave ID | 6.1.1 |
-| Feature | 6.1 — Pattern Detection |
-| Epic | 6 — Proactive Intelligence |
+| Wave ID | 7.1.1 |
+| Feature | 7.1 — Pattern Detection |
+| Epic | 7 — Proactive Intelligence |
 | Status | Planning |
 | Scope | Create `detected_patterns` table with RLS; implement the nightly cron job that analyzes task-completion history for habits and blockers; expose results via the `detect_patterns` tool; fire a subtle tray notification when a new pattern is first detected |
 
@@ -45,7 +45,7 @@ relateddocuments:
 
 ## User Stories
 
-### Story 6.1.1.1 — Pattern store exists with correct schema and RLS
+### Story 7.1.1.1 — Pattern store exists with correct schema and RLS
 
 **As the** system,
 **I want** the `detected_patterns` table created with the fields defined in Architecture §14.5 and per-user RLS enforced,
@@ -62,9 +62,9 @@ relateddocuments:
 **Priority:** Critical (blocks all other stories in this wave)
 **Estimated hours:** 4h
 
-#### Task 6.1.1.1.1 — Create `detected_patterns` migration
+#### Task 7.1.1.1.1 — Create `detected_patterns` migration
 
-- **Parent Story:** 6.1.1.1
+- **Parent Story:** 7.1.1.1
 - **Agent:** Backend Engineer
 - **Estimation:** 4h
 - **Dependencies:** Epic 4 goals/tasks tables must exist (migration prerequisite)
@@ -73,7 +73,7 @@ relateddocuments:
 
 ---
 
-### Story 6.1.1.2 — Nightly pattern detection job runs and writes results
+### Story 7.1.1.2 — Nightly pattern detection job runs and writes results
 
 **As the** Pattern-Detection Cron actor,
 **I want** to analyze each user's task-completion history nightly and write detected habits and recurring blockers to `detected_patterns`,
@@ -93,27 +93,27 @@ relateddocuments:
 **Estimated hours:** 8h
 **Business Requirements:** Feature 8 (Proactive Intelligence), UC-42 (Pattern detection nightly)
 
-#### Task 6.1.1.2.1 — Implement pattern-analysis library
+#### Task 7.1.1.2.1 — Implement pattern-analysis library
 
-- **Parent Story:** 6.1.1.2
+- **Parent Story:** 7.1.1.2
 - **Agent:** Backend Engineer
 - **Estimation:** 6h
-- **Dependencies:** Task 6.1.1.1.1 (table exists); Epic 4 `goals` and `tasks` tables with `completed_at`
+- **Dependencies:** Task 7.1.1.1.1 (table exists); Epic 4 `goals` and `tasks` tables with `completed_at`
 - **Deliverables:** `apps/web/src/lib/jobs/detect-patterns.ts` — exported `runPatternDetection(userId: string): Promise<PatternDetectionResult>` function; type definitions in `@personal-assistant/types`
 - **Acceptance Criteria:** Function is pure-ish (takes userId, queries DB, writes patterns); all four pattern types implemented; cold-start guard (insufficient history → no write); idempotent upsert; structured return value with counts; no hardcoded thresholds — values sourced from named constants exported from the module.
 
-#### Task 6.1.1.2.2 — Implement cron endpoint and Vercel Cron config
+#### Task 7.1.1.2.2 — Implement cron endpoint and Vercel Cron config
 
-- **Parent Story:** 6.1.1.2
+- **Parent Story:** 7.1.1.2
 - **Agent:** Backend Engineer
 - **Estimation:** 2h
-- **Dependencies:** Task 6.1.1.2.1
+- **Dependencies:** Task 7.1.1.2.1
 - **Deliverables:** `apps/web/src/app/api/cron/detect-patterns/route.ts`; updated `vercel.json` with cron schedule; updated `.env.example` confirming `CRON_SECRET` entry
 - **Acceptance Criteria:** `POST /api/cron/detect-patterns` validates `CRON_SECRET` from env (not hardcoded); returns HTTP 200 with a job summary JSON on success; returns HTTP 401 on invalid secret; returns HTTP 500 with a logged error if the job fails; Vercel Cron schedule entry present in `vercel.json`.
 
 ---
 
-### Story 6.1.1.3 — `detect_patterns` tool surfaces results to chat
+### Story 7.1.1.3 — `detect_patterns` tool surfaces results to chat
 
 **As the** Primary User,
 **I want** to ask Coriven what patterns it has detected about my habits,
@@ -130,18 +130,18 @@ relateddocuments:
 **Estimated hours:** 4h
 **Business Requirements:** Feature 8 (Proactive Intelligence), UC-42
 
-#### Task 6.1.1.3.1 — Add `detect_patterns` to tool registry and handler
+#### Task 7.1.1.3.1 — Add `detect_patterns` to tool registry and handler
 
-- **Parent Story:** 6.1.1.3
+- **Parent Story:** 7.1.1.3
 - **Agent:** Backend Engineer
 - **Estimation:** 4h
-- **Dependencies:** Task 6.1.1.1.1 (table); existing `registry.ts` and `handlers.ts` patterns
+- **Dependencies:** Task 7.1.1.1.1 (table); existing `registry.ts` and `handlers.ts` patterns
 - **Deliverables:** Updated `apps/web/src/lib/chat/tools/registry.ts`; updated `apps/web/src/lib/chat/tools/handlers.ts`; updated `ToolName` type in `@personal-assistant/types`
 - **Acceptance Criteria:** Tool appears in registry with valid JSON Schema; handler queries only the authenticated user's rows (RLS enforced at DB layer, `user_id` filter added defensively in handler); handler returns `is_error: false` with serialized patterns array or empty array; handler returns `is_error: true` with a clear message on DB error; `ToolName` union type updated; `tool_permissions` seed or migration inserts a default row for `detect_patterns` for existing users.
 
 ---
 
-### Story 6.1.1.4 — Tray delivers a subtle notification on new pattern detection
+### Story 7.1.1.4 — Tray delivers a subtle notification on new pattern detection
 
 **As the** Primary User,
 **I want** to receive a single subtle tray notification when Coriven detects a new habit for the first time,
@@ -160,21 +160,21 @@ relateddocuments:
 **Estimated hours:** 6h
 **Business Requirements:** Feature 8, UC-42; UX calm-proactivity principle
 
-#### Task 6.1.1.4.1 — Implement `/api/patterns/new` endpoint with frequency cap
+#### Task 7.1.1.4.1 — Implement `/api/patterns/new` endpoint with frequency cap
 
-- **Parent Story:** 6.1.1.4
+- **Parent Story:** 7.1.1.4
 - **Agent:** Backend Engineer
 - **Estimation:** 4h
-- **Dependencies:** Task 6.1.1.1.1 (table); Task 6.1.1.2.1 (job writes patterns)
+- **Dependencies:** Task 7.1.1.1.1 (table); Task 7.1.1.2.1 (job writes patterns)
 - **Deliverables:** `apps/web/src/app/api/patterns/new/route.ts`; updated `detected_patterns` table or a lightweight frequency-cap mechanism (column `last_notified_at timestamptz` on `detected_patterns`)
 - **Acceptance Criteria:** `GET /api/patterns/new` is authenticated (Supabase SSR session); returns patterns where `is_active = true` and `last_notified_at` is null or older than 7 days; a `POST /api/patterns/[id]/acknowledge` marks `last_notified_at = now()`; both endpoints enforce RLS so a user can only read/update their own patterns; the 7-day window is sourced from a named constant, not a magic number.
 
-#### Task 6.1.1.4.2 — Integrate new-pattern check into tray poll loop
+#### Task 7.1.1.4.2 — Integrate new-pattern check into tray poll loop
 
-- **Parent Story:** 6.1.1.4
+- **Parent Story:** 7.1.1.4
 - **Agent:** Backend / Tray Engineer
 - **Estimation:** 2h
-- **Dependencies:** Task 6.1.1.4.1
+- **Dependencies:** Task 7.1.1.4.1
 - **Deliverables:** Updated `apps/tray/src/index.ts` (or Tauri equivalent) to poll `/api/patterns/new` on the existing poll cycle; updated `apps/tray/src/notifier.ts` (or equivalent) with a `notifyPattern` function
 - **Acceptance Criteria:** Tray calls `/api/patterns/new` on each poll cycle; for each returned pattern, fires one notification (no sound, ≤ 100 chars) and calls the acknowledge endpoint; no infinite re-notification loop; errors during pattern poll are logged but do not crash the reminder poll.
 
@@ -183,12 +183,12 @@ relateddocuments:
 ## Task Dependencies
 
 ```
-6.1.1.1.1  (migration)
-    └─► 6.1.1.2.1  (analysis library)
-           └─► 6.1.1.2.2  (cron endpoint)
-    └─► 6.1.1.3.1  (tool registry + handler)
-    └─► 6.1.1.4.1  (new-pattern endpoint + freq cap)
-           └─► 6.1.1.4.2  (tray integration)
+7.1.1.1.1  (migration)
+    └─► 7.1.1.2.1  (analysis library)
+           └─► 7.1.1.2.2  (cron endpoint)
+    └─► 7.1.1.3.1  (tool registry + handler)
+    └─► 7.1.1.4.1  (new-pattern endpoint + freq cap)
+           └─► 7.1.1.4.2  (tray integration)
 ```
 
 **Critical path:** Migration → analysis library → cron endpoint. Tool and tray tasks can parallelize once the migration is done.
@@ -317,7 +317,7 @@ relateddocuments:
 
 ## Related Documentation
 
-- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 7.1
+- Epic: `docs/implementation/_main/epic-7-proactive-intelligence.md` — Feature 7.1
 - Architecture: `docs/architecture/_main/04-Architecture.md` — §14.5 (`detected_patterns`), jobs/cron
 - ADR-010: `docs/architecture/decisions/ADR-010-scheduled-proactive-jobs.md`
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` — Feature 8, UC-42
