@@ -46,7 +46,6 @@ export async function POST(request: Request) {
 
       try {
         await runChatEngine({ userId: user.id, conversationId, clientMessages: messages, send })
-        send({ type: 'done' })
       } catch (err) {
         send({ type: 'error', message: String(err) })
       } finally {

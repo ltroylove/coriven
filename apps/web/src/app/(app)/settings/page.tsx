@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { ALL_TOOL_NAMES } from '@/lib/chat/tools/registry'
 import { ToolPermissionsClient } from './tool-permissions-client'
 import { BriefingSettingsClient } from './briefing-settings-client'
+import { SentinelModeClient } from '@/components/settings/sentinel-mode-client'
 import type { ToolName } from '@personal-assistant/types'
 
 // Defaults used as fallback when data is unavailable
@@ -26,26 +27,27 @@ async function getToolPermissions(userId: string) {
   })) as { tool_name: ToolName; enabled: boolean }[]
 }
 
-async function getBriefingSettings() {
+async function getProfileSettings() {
   // Use auth client (respects RLS) instead of service client for user-facing reads
   const supabase = await createAuthServerClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { timezone: DEFAULT_TIMEZONE, briefingTime: DEFAULT_BRIEFING_TIME }
+  if (!user) return { timezone: DEFAULT_TIMEZONE, briefingTime: DEFAULT_BRIEFING_TIME, sentinelMode: 'async' as const }
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('timezone, briefing_time')
+    .select('timezone, briefing_time, sentinel_mode')
     .eq('id', user.id)
     .single()
 
   if (error) {
-    console.error('[settings] getBriefingSettings failed', error)
-    return { timezone: DEFAULT_TIMEZONE, briefingTime: DEFAULT_BRIEFING_TIME }
+    console.error('[settings] getProfileSettings failed', error)
+    return { timezone: DEFAULT_TIMEZONE, briefingTime: DEFAULT_BRIEFING_TIME, sentinelMode: 'async' as const }
   }
 
   return {
     timezone: data?.timezone ?? DEFAULT_TIMEZONE,
     briefingTime: data?.briefing_time ?? DEFAULT_BRIEFING_TIME,
+    sentinelMode: (data?.sentinel_mode ?? 'async') as 'async' | 'sync',
   }
 }
 
@@ -53,7 +55,7 @@ export default async function SettingsPage() {
   const supabase = await createAuthServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   const permissions = user ? await getToolPermissions(user.id) : []
-  const briefingSettings = await getBriefingSettings()
+  const profileSettings = await getProfileSettings()
 
   return (
     <div className="max-w-lg">
@@ -92,19 +94,32 @@ export default async function SettingsPage() {
         </p>
       </section>
 
-      <section>
+      <section className="mb-8">
         <h2 className="text-xs font-medium uppercase tracking-widest text-gray-500 mb-3">
           Briefing
         </h2>
         <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
           <BriefingSettingsClient
-            initialTimezone={briefingSettings.timezone}
-            initialBriefingTime={briefingSettings.briefingTime}
+            initialTimezone={profileSettings.timezone}
+            initialBriefingTime={profileSettings.briefingTime}
           />
         </div>
         <p className="text-xs text-gray-600 mt-3 leading-relaxed">
           Your daily briefing summarises active goals, upcoming tasks, and stalled goals.
           It is assembled automatically in the 30-minute window around your chosen time.
+        </p>
+      </section>
+
+      <section>
+        <h2 className="text-xs font-medium uppercase tracking-widest text-gray-500 mb-3">
+          Assistant intelligence
+        </h2>
+        <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
+          <SentinelModeClient initialMode={profileSettings.sentinelMode} />
+        </div>
+        <p className="text-xs text-gray-600 mt-3 leading-relaxed">
+          Controls when conversation context is built. Fast mode has near-zero overhead.
+          Always current adds a brief pause before each response while your context is updated.
         </p>
       </section>
     </div>

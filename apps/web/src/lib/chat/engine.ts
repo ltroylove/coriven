@@ -14,7 +14,8 @@ export type SSEEvent =
   | { type: 'text_delta'; delta: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string; is_error: boolean }
-  | { type: 'done' }
+  | { type: 'context_building' }
+  | { type: 'done'; contextFallback?: boolean }
   | { type: 'error'; message: string }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +254,14 @@ export async function runChatEngine({
   clientMessages: ChatMessage[]
   send: (event: SSEEvent) => void
 }): Promise<void> {
-  const { enabled: enabledTools, disabledNames, enabledStoreTypes } = await loadToolPermissions(userId)
+  // Load sentinel mode alongside tool permissions — fail-safe to 'async'
+  const db = createServiceClient()
+  const [toolPerms, profileResult] = await Promise.all([
+    loadToolPermissions(userId),
+    db.from('profiles').select('sentinel_mode').eq('id', userId).single(),
+  ])
+  const { enabled: enabledTools, disabledNames, enabledStoreTypes } = toolPerms
+  const sentinelMode = (profileResult.data?.sentinel_mode ?? 'async') as 'async' | 'sync'
 
   // Load constraints once per turn — gate is a pure function called per tool block (ADR-007)
   let constraints: BehavioralConstraint[] = []
@@ -264,8 +272,36 @@ export async function runChatEngine({
     console.error(JSON.stringify({ event: 'constraint_load_error', userId, error: 'load failed at engine start' }))
   }
 
-  // Load memory context via three-tier degradation (graceful — never blocks chat on failure)
+  // Extract the user message text (needed for both sentinel and memory context)
+  const lastUserMsg = clientMessages[clientMessages.length - 1]
+  const userText = lastUserMsg?.role === 'user'
+    ? lastUserMsg.content.filter((b): b is TextBlock => b.type === 'text').map(b => b.text).join('')
+    : ''
+
+  // In sync mode: save user message → await sentinel → load fresh context.
+  // In async mode: load cached context → save user message → fire sentinel in background.
   let memoryContext: MemoryContext | undefined
+  let contextFallback = false
+
+  if (sentinelMode === 'sync' && userText) {
+    await saveMessage(userId, conversationId, 'user', userText)
+
+    send({ type: 'context_building' })
+    const TIMEOUT = parseInt(process.env.SENTINEL_SYNC_TIMEOUT_MS ?? '8000', 10)
+    try {
+      await Promise.race([
+        runSentinel(userId, userText, 'user'),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('sentinel_timeout')), TIMEOUT)
+        ),
+      ])
+    } catch (err) {
+      contextFallback = true
+      console.warn(JSON.stringify({ event: 'sentinel_sync_timeout', userId, error: String(err) }))
+    }
+  }
+
+  // Load memory context via three-tier degradation (graceful — never blocks chat on failure)
   try {
     const lastUserMessage = clientMessages.findLast(m => m.role === 'user')
     const lastText = lastUserMessage?.content
@@ -281,15 +317,10 @@ export async function runChatEngine({
   const system = buildSystemPrompt(disabledNames, memoryContext, enabledStoreTypes, enabledToolNamesSet)
   const anthropicMessages = toAnthropicMessages(clientMessages)
 
-  // Persist the new user message (last item in clientMessages)
-  const lastUserMsg = clientMessages[clientMessages.length - 1]
-  if (lastUserMsg?.role === 'user') {
-    const text = lastUserMsg.content
-      .filter((b): b is TextBlock => b.type === 'text')
-      .map(b => b.text)
-      .join('')
-    await saveMessage(userId, conversationId, 'user', text)
-    runSentinel(userId, text, 'user').catch(() => {/* already handled internally */})
+  // Persist user message and fire async sentinel (skipped above if sync mode already handled it)
+  if (sentinelMode === 'async' && lastUserMsg?.role === 'user' && userText) {
+    await saveMessage(userId, conversationId, 'user', userText)
+    runSentinel(userId, userText, 'user').catch(() => {/* already handled internally */})
   }
 
   const loopMessages = [...anthropicMessages]
@@ -404,4 +435,5 @@ export async function runChatEngine({
 
   await saveMessage(userId, conversationId, 'assistant', assistantText, assistantToolCalls)
   runSentinel(userId, assistantText, 'assistant').catch(() => {/* already handled internally */})
+  send({ type: 'done', ...(contextFallback ? { contextFallback: true } : {}) })
 }
