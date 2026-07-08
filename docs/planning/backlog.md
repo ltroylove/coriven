@@ -52,28 +52,21 @@ The current UI is functional and sufficient for testing but is generic (plain Ta
 ### BL-004 — Timezone-aware scheduling and user timezone preference
 **Area:** Epic 7 (Proactive Intelligence) / cross-cutting concern for all cron jobs and notification delivery
 
-All scheduled jobs (nightly pattern detection, Friday weekly review, daily briefing) currently run and deliver notifications in UTC. This means the "Friday 5pm" weekly review fires at a time that may be the middle of the night for users outside UTC, and the nightly cron similarly has no relationship to the user's actual day.
+All scheduled jobs (nightly pattern detection, Friday weekly review, daily briefing) currently run in UTC. The cron schedules in `vercel.json` are hardcoded UTC times with no awareness of the user's actual local time, so notifications fire at whatever UTC maps to — which may be 3am locally.
 
-**Problems today:**
-- `vercel.json` cron schedules are hardcoded in UTC with no per-user offset
-- `profiles` table has a `timezone` field but it is not reliably populated and not used by any job
-- The tray polls and delivers notifications whenever the cron fires, regardless of whether the user is awake
+**The fix (simple — currently single-user):**
 
-**What needs to happen:**
+Since Vercel Cron only supports one global UTC schedule, the approach is to work backwards from what the user wants:
 
-1. **User timezone onboarding** — during first login (or a settings page), prompt the user to confirm their timezone. Browser `Intl.DateTimeFormat().resolvedOptions().timeZone` can pre-fill this so it requires zero typing. Store in `profiles.timezone` as an IANA timezone string (e.g. `America/Chicago`).
+1. **Capture timezone in Settings UI** — add a timezone field to the account/settings page. Pre-fill it from the browser (`Intl.DateTimeFormat().resolvedOptions().timeZone`) so it requires no typing. Store as an IANA string (e.g. `America/Chicago`) in `profiles.timezone`. Show a live preview of the current local time in that zone so the user can confirm it's right.
 
-2. **Timezone setting in Settings UI** — expose `profiles.timezone` as an editable field in the account/settings page so users can correct it later. Show the current local time in that timezone as a live preview so they can confirm it's right.
+2. **Compute UTC offset and update cron schedules** — when the user saves their timezone, a server action computes the UTC equivalent of each desired local trigger time (e.g. "9pm local" for the nightly job, "5pm local Friday" for weekly review) and rewrites the cron expressions in `vercel.json` (or an equivalent config surface), then redeploys. The user always sees and sets their local time; the UTC math happens behind the scenes.
 
-3. **Job scheduling respects timezone** — the nightly detect-patterns job and weekly review job should read `profiles.timezone` per user and either:
-   - **Option A (simpler):** Run the cron on a fixed UTC schedule but skip users whose local time is outside a quiet-hours window (e.g. don't deliver if local time is 10pm–7am).
-   - **Option B (correct):** Shift the cron schedule per user timezone — complex with Vercel Cron (single global schedule), so this likely means the cron fires frequently (e.g. every hour) and the job checks whether each user's local time has crossed the intended trigger time since the last run.
+3. **Display local time everywhere** — all timestamps shown in the UI (briefings, task due dates, notification history) are converted to `profiles.timezone` before display. Nothing shows raw UTC to the user.
 
-4. **Quiet hours / do-not-disturb** — don't fire tray notifications during the user's night. The tray poll can check the user's local time before surfacing a notification and defer it until morning (e.g. 8am local) if the current local time is outside the delivery window.
+4. **Multi-user path (future):** when there are multiple users with different timezones, shift to an hourly cron that checks whether each user's desired trigger time has passed since the last run. No architecture change needed for now.
 
-**Recommended approach:** Option A for the cron (simpler, ships fast), combined with a quiet-hours check in the tray before firing any notification. Full per-user cron scheduling (Option B) can come later when there are multiple users with meaningfully different timezones.
-
-**Why:** Notifications at 3am are worse than no notifications — they erode trust and train users to ignore the app. Timezone correctness is table stakes for any scheduling feature.
+**Why:** Notifications at 3am are worse than no notifications — they erode trust and train users to ignore the app. The fix is straightforward for a single user: capture their timezone once, do the UTC math, and show them local time everywhere.
 
 ---
 
