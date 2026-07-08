@@ -523,6 +523,73 @@ async function handleSubmitForApproval(input: Input, userId: string): Promise<Ha
   }
 }
 
+// ---------------------------------------------------------------------------
+// search_email_metadata
+// ---------------------------------------------------------------------------
+
+/** Default and maximum result limits for search_email_metadata (privacy invariant: metadata only). */
+const SEARCH_EMAIL_METADATA_DEFAULT_LIMIT = 10
+const SEARCH_EMAIL_METADATA_MAX_LIMIT = 20
+
+/**
+ * Search email_metadata by keyword against subject and sender.
+ * PRIVACY INVARIANT: this handler NEVER queries body fields.
+ * Returns at most SEARCH_EMAIL_METADATA_MAX_LIMIT rows ordered by received_at DESC.
+ */
+async function handleSearchEmailMetadata(input: Input, userId: string): Promise<HandlerResult> {
+  const query = String(input.query ?? '').trim()
+  if (!query) {
+    return { content: 'query is required.', is_error: true }
+  }
+
+  const rawLimit = typeof input.limit === 'number' ? input.limit : SEARCH_EMAIL_METADATA_DEFAULT_LIMIT
+  const limit = Math.min(Math.max(1, Math.floor(rawLimit)), SEARCH_EMAIL_METADATA_MAX_LIMIT)
+
+  const pattern = `%${query}%`
+
+  try {
+    const db = createServiceClient()
+    const { data, error } = await db
+      .from('email_metadata')
+      // Select ONLY metadata columns — body fields must never be included (ADR-013 privacy invariant).
+      .select('id, subject, sender, urgency, received_at')
+      .eq('user_id', userId)
+      .or(`subject.ilike.${pattern},sender.ilike.${pattern}`)
+      .order('received_at', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      console.error(
+        JSON.stringify({
+          event: 'tool.search_email_metadata.error',
+          userId,
+          error: error.message,
+        }),
+      )
+      return { content: 'Failed to search email metadata. Please try again.', is_error: true }
+    }
+
+    console.log(
+      JSON.stringify({
+        event: 'tool.search_email_metadata.called',
+        userId,
+        resultCount: (data ?? []).length,
+      }),
+    )
+
+    return { content: JSON.stringify(data ?? []), is_error: false }
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: 'tool.search_email_metadata.unexpected',
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    )
+    return { content: 'Failed to search email metadata. Please try again.', is_error: true }
+  }
+}
+
 /** Maximum body length for a push notification (native OS constraint, mirrors tray constant). */
 const PUSH_NOTIFICATION_MAX_BODY_CHARS = 100
 
@@ -766,6 +833,7 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   generate_weekly_review: handleGenerateWeeklyReview,
   submit_for_approval: handleSubmitForApproval,
   get_email_thread: handleGetEmailThread,
+  search_email_metadata: handleSearchEmailMetadata,
   detect_patterns: handleDetectPatterns,
   push_notification: handlePushNotification,
 }

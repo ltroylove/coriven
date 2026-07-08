@@ -25,6 +25,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'generate_weekly_review',
   'submit_for_approval',
   'get_email_thread',
+  'search_email_metadata',
   'detect_patterns',
   'push_notification',
 ]
@@ -425,6 +426,28 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
         },
       },
       required: ['provider', 'message_id'],
+    },
+  },
+
+  search_email_metadata: {
+    name: 'search_email_metadata',
+    description:
+      'Search email metadata (subject, sender, urgency, date) by keyword. ' +
+      'Use this for cross-context queries about a project, person, or topic to surface relevant email threads. ' +
+      'Returns metadata only — email bodies are never fetched by this tool.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Keyword or phrase to search against email subjects and senders.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return. Default: 10, max: 20.',
+        },
+      },
+      required: ['query'],
     },
   },
 
