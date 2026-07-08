@@ -218,8 +218,8 @@ describe('detectWeeklyReviewTime', () => {
 // ---------------------------------------------------------------------------
 //
 // Wave 7.2.1: detectStaleGoals now takes last_task_completed_at (not last_activity_at)
-// and returns { id, title, daysSinceActivity }. Goals with status 'completed' or
-// 'cancelled' are excluded (not just non-'active').
+// and returns { id, title, daysSinceActivity }. Goals with terminal status 'achieved'
+// or 'abandoned' are excluded. The goal_status enum is: active | achieved | paused | abandoned.
 
 describe('detectStaleGoals', () => {
   it('returns empty array when all goals have recent task completion', () => {
@@ -317,29 +317,29 @@ describe('detectStaleGoals', () => {
     expect(detectStaleGoals(goals, now)).toHaveLength(0)
   })
 
-  it('excludes goals with status "completed"', () => {
+  it('excludes goals with status "achieved" (terminal status in goal_status enum)', () => {
     const now = new Date()
     const goals = [
       {
         id: 'g4',
-        title: 'Done goal',
+        title: 'Achieved goal',
         last_task_completed_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 10, now),
         created_at: daysAgoISO(90, now),
-        status: 'completed',
+        status: 'achieved',
       },
     ]
     expect(detectStaleGoals(goals, now)).toHaveLength(0)
   })
 
-  it('excludes goals with status "cancelled"', () => {
+  it('excludes goals with status "abandoned" (terminal status in goal_status enum)', () => {
     const now = new Date()
     const goals = [
       {
         id: 'g5',
-        title: 'Cancelled goal',
+        title: 'Abandoned goal',
         last_task_completed_at: daysAgoISO(STALE_GOAL_THRESHOLD_DAYS + 10, now),
         created_at: daysAgoISO(90, now),
-        status: 'cancelled',
+        status: 'abandoned',
       },
     ]
     expect(detectStaleGoals(goals, now)).toHaveLength(0)

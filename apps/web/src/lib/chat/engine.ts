@@ -41,7 +41,7 @@ function getEnabledStoreTypes(enabledToolNames: string[]): Set<string> {
   return enabled
 }
 
-function buildSystemPrompt(disabledTools: string[], memoryContext?: MemoryContext, enabledStoreTypes?: Set<string>): string {
+function buildSystemPrompt(disabledTools: string[], memoryContext?: MemoryContext, enabledStoreTypes?: Set<string>, enabledToolNames?: Set<string>): string {
   const now = new Date().toISOString()
   let prompt = `You are a personal assistant that helps the user manage tasks and reminders.
 Today is ${now}.
@@ -112,11 +112,16 @@ as the \`rationale\` field — it is required and cannot be empty.`
   // Kept to ≤150 words to minimize token cost (Task 7.4.1.1.1).
   if (enabledStoreTypes && enabledStoreTypes.size >= 2) {
     // Build the list of cross-context tool names that are actually enabled.
+    // We check enabledToolNames to ensure we only reference tools that are truly
+    // present in the user's enabled set — a store type can be enabled via one tool
+    // (e.g. get_email_thread) while another tool in that store (search_email_metadata)
+    // remains disabled in tool_permissions.
+    const hasToolEnabled = (name: string) => !enabledToolNames || enabledToolNames.has(name)
     const crossContextTools: string[] = []
-    if (enabledStoreTypes.has('tasks'))  crossContextTools.push('list_tasks')
-    if (enabledStoreTypes.has('goals'))  crossContextTools.push('list_goals')
-    if (enabledStoreTypes.has('memory')) crossContextTools.push('recall_memories')
-    if (enabledStoreTypes.has('email'))  crossContextTools.push('search_email_metadata')
+    if (enabledStoreTypes.has('tasks')  && hasToolEnabled('list_tasks'))             crossContextTools.push('list_tasks')
+    if (enabledStoreTypes.has('goals')  && hasToolEnabled('list_goals'))             crossContextTools.push('list_goals')
+    if (enabledStoreTypes.has('memory') && hasToolEnabled('recall_memories'))        crossContextTools.push('recall_memories')
+    if (enabledStoreTypes.has('email')  && hasToolEnabled('search_email_metadata'))  crossContextTools.push('search_email_metadata')
 
     prompt += `
 
@@ -272,7 +277,8 @@ export async function runChatEngine({
     console.warn('[engine] Memory context load failed; continuing without memory', err)
   }
 
-  const system = buildSystemPrompt(disabledNames, memoryContext, enabledStoreTypes)
+  const enabledToolNamesSet = new Set(enabledTools.map(t => t.name))
+  const system = buildSystemPrompt(disabledNames, memoryContext, enabledStoreTypes, enabledToolNamesSet)
   const anthropicMessages = toAnthropicMessages(clientMessages)
 
   // Persist the new user message (last item in clientMessages)

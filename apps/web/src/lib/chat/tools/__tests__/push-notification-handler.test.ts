@@ -10,8 +10,8 @@
  *  - Returns is_error=true on DB failure
  *  - Returns is_error=true when title is missing
  *  - Returns is_error=true when body is missing
- *  - Defaults pattern_type to 'push_notification' when not provided
- *  - Accepts custom pattern_type
+ *  - Always generates a unique pattern_type with timestamp suffix to avoid
+ *    unique constraint violations (Fix 7: partial unique index workaround)
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -98,22 +98,32 @@ describe('executeToolHandler: push_notification', () => {
     expect(insertArgs.last_notified_at).toBeNull()
   })
 
-  it('defaults pattern_type to "push_notification" when not provided', async () => {
+  it('always generates a unique pattern_type with "push_notification_" prefix and timestamp suffix', async () => {
+    // Fix 7: each push_notification gets a unique pattern_type (push_notification_{ms})
+    // to avoid the partial unique index UNIQUE(user_id, pattern_type) WHERE goal_id IS NULL.
     const client = makePushNotifClient({ data: { id: 'notif-uuid-003' } })
     vi.mocked(createServiceClient).mockReturnValue(client as never)
 
+    const before = Date.now()
     await executeToolHandler(
       'push_notification',
       { title: 'Test', body: 'Short body.' },
       MOCK_USER_ID,
     )
+    const after = Date.now()
 
     const insertCall = vi.mocked(client.from).mock.results[0].value.insert
     const insertArgs = insertCall.mock.calls[0][0] as Record<string, unknown>
-    expect(insertArgs.pattern_type).toBe('push_notification')
+    const patternType = String(insertArgs.pattern_type)
+    expect(patternType).toMatch(/^push_notification_\d+$/)
+    const ts = Number(patternType.replace('push_notification_', ''))
+    expect(ts).toBeGreaterThanOrEqual(before)
+    expect(ts).toBeLessThanOrEqual(after)
   })
 
-  it('accepts a custom pattern_type', async () => {
+  it('ignores any caller-supplied pattern_type — always uses push_notification_{ts}', async () => {
+    // The input pattern_type field is no longer forwarded to the DB; the handler
+    // always generates a unique value to prevent unique constraint violations.
     const client = makePushNotifClient({ data: { id: 'notif-uuid-004' } })
     vi.mocked(createServiceClient).mockReturnValue(client as never)
 
@@ -125,7 +135,7 @@ describe('executeToolHandler: push_notification', () => {
 
     const insertCall = vi.mocked(client.from).mock.results[0].value.insert
     const insertArgs = insertCall.mock.calls[0][0] as Record<string, unknown>
-    expect(insertArgs.pattern_type).toBe('stale_goal')
+    expect(String(insertArgs.pattern_type)).toMatch(/^push_notification_\d+$/)
   })
 
   // -------------------------------------------------------------------------

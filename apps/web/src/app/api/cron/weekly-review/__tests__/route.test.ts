@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Unit tests for POST /api/cron/weekly-review
+ * Unit tests for GET /api/cron/weekly-review
  * Wave 7.3.1 — Cron endpoint: auth, success, per-user error isolation
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -19,7 +19,7 @@ vi.mock('@/lib/supabase/server', () => ({
 
 const { assembleWeeklyReview, storeWeeklyReview } = await import('@/lib/jobs/weekly-review')
 const { createServiceClient } = await import('@/lib/supabase/server')
-const { POST } = await import('../route')
+const { GET } = await import('../route')
 
 const VALID_SECRET = 'test-cron-secret-abc123'
 
@@ -29,7 +29,7 @@ function makeRequest(opts: { secret?: string | null; method?: string } = {}) {
     headers.set('Authorization', `Bearer ${opts.secret ?? VALID_SECRET}`)
   }
   return new Request('http://localhost/api/cron/weekly-review', {
-    method: opts.method ?? 'POST',
+    method: opts.method ?? 'GET',
     headers,
   })
 }
@@ -56,14 +56,14 @@ beforeEach(() => {
   vi.mocked(storeWeeklyReview).mockResolvedValue(undefined)
 })
 
-describe('POST /api/cron/weekly-review', () => {
+describe('GET /api/cron/weekly-review', () => {
   // ---------------------------------------------------------------------------
   // Auth
   // ---------------------------------------------------------------------------
 
   it('returns 401 on missing Authorization header', async () => {
     const req = makeRequest({ secret: null })
-    const res = await POST(req)
+    const res = await GET(req)
     expect(res.status).toBe(401)
     const body = await res.json()
     expect(body.error).toBe('Unauthorized')
@@ -71,7 +71,7 @@ describe('POST /api/cron/weekly-review', () => {
 
   it('returns 401 on wrong secret', async () => {
     const req = makeRequest({ secret: 'wrong-secret' })
-    const res = await POST(req)
+    const res = await GET(req)
     expect(res.status).toBe(401)
     const body = await res.json()
     expect(body.error).toBe('Unauthorized')
@@ -87,7 +87,7 @@ describe('POST /api/cron/weekly-review', () => {
     )
 
     const req = makeRequest()
-    const res = await POST(req)
+    const res = await GET(req)
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.usersProcessed).toBe(2)
@@ -100,7 +100,7 @@ describe('POST /api/cron/weekly-review', () => {
     )
 
     const req = makeRequest()
-    await POST(req)
+    await GET(req)
 
     expect(vi.mocked(assembleWeeklyReview)).toHaveBeenCalledWith('user-003', expect.any(Date))
     expect(vi.mocked(storeWeeklyReview)).toHaveBeenCalledTimes(1)
@@ -121,7 +121,7 @@ describe('POST /api/cron/weekly-review', () => {
       .mockResolvedValueOnce({ wins: [], blockers: [], nextWeek: [] })
 
     const req = makeRequest()
-    const res = await POST(req)
+    const res = await GET(req)
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.usersProcessed).toBe(2)
@@ -140,7 +140,7 @@ describe('POST /api/cron/weekly-review', () => {
     } as never)
 
     const req = makeRequest()
-    const res = await POST(req)
+    const res = await GET(req)
     expect(res.status).toBe(500)
   })
 })

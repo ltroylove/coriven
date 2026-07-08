@@ -14,9 +14,7 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createApiServerClient } from '@/lib/supabase/api-server'
-
-/** Frequency cap: do not re-notify the same pattern within this many days. */
-export const NOTIFICATION_FREQUENCY_CAP_DAYS = 7
+import { NOTIFICATION_FREQUENCY_CAP_DAYS } from '@/lib/constants/patterns'
 
 /** Returns a Date that is `days` days before now. */
 function daysAgo(days: number): Date {

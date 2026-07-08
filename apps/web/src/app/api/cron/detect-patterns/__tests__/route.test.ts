@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Integration tests for POST /api/cron/detect-patterns
+ * Integration tests for GET /api/cron/detect-patterns
  * Wave 7.1.1 — Pattern Detection cron endpoint
  *
  * Tests:
@@ -22,7 +22,7 @@ vi.mock('@/lib/jobs/detect-patterns', () => ({
 
 const { createServiceClient } = await import('@/lib/supabase/server')
 const { runPatternDetection } = await import('@/lib/jobs/detect-patterns')
-const { POST } = await import('../route')
+const { GET } = await import('../route')
 
 const TEST_SECRET = 'test-cron-secret-abc123'
 
@@ -32,7 +32,7 @@ function makeRequest(opts: { authHeader?: string } = {}) {
     headers.set('Authorization', opts.authHeader)
   }
   return new Request('http://localhost/api/cron/detect-patterns', {
-    method: 'POST',
+    method: 'GET',
     headers,
   })
 }
@@ -54,26 +54,26 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-describe('POST /api/cron/detect-patterns', () => {
+describe('GET /api/cron/detect-patterns', () => {
   // ---------------------------------------------------------------------------
   // Authorization
   // ---------------------------------------------------------------------------
 
   it('returns 401 when Authorization header is missing', async () => {
-    const res = await POST(makeRequest())
+    const res = await GET(makeRequest())
     expect(res.status).toBe(401)
     expect(await res.json()).toEqual({ error: 'Unauthorized' })
   })
 
   it('returns 401 when Bearer token is wrong', async () => {
-    const res = await POST(makeRequest({ authHeader: 'Bearer wrong-secret' }))
+    const res = await GET(makeRequest({ authHeader: 'Bearer wrong-secret' }))
     expect(res.status).toBe(401)
     expect(await res.json()).toEqual({ error: 'Unauthorized' })
   })
 
   it('returns 401 when CRON_SECRET env var is not set', async () => {
     vi.stubEnv('CRON_SECRET', '')
-    const res = await POST(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
+    const res = await GET(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
     expect(res.status).toBe(401)
   })
 
@@ -84,7 +84,7 @@ describe('POST /api/cron/detect-patterns', () => {
   it('returns 200 with summary when valid secret and no users', async () => {
     vi.mocked(createServiceClient).mockReturnValue(makeDbClient([]) as never)
 
-    const res = await POST(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
+    const res = await GET(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body).toEqual({
@@ -102,7 +102,7 @@ describe('POST /api/cron/detect-patterns', () => {
       .mockResolvedValueOnce({ userId: 'user-1', patternsWritten: 2, patternsDeactivated: 0 })
       .mockResolvedValueOnce({ userId: 'user-2', patternsWritten: 1, patternsDeactivated: 1 })
 
-    const res = await POST(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
+    const res = await GET(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.usersProcessed).toBe(2)
@@ -118,7 +118,7 @@ describe('POST /api/cron/detect-patterns', () => {
       .mockResolvedValueOnce({ userId: 'user-ok', patternsWritten: 1, patternsDeactivated: 0 })
       .mockRejectedValueOnce(new Error('DB connection failed'))
 
-    const res = await POST(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
+    const res = await GET(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
     // Job continues despite one error — returns 200 with what succeeded
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -137,7 +137,7 @@ describe('POST /api/cron/detect-patterns', () => {
       }),
     } as never)
 
-    const res = await POST(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
+    const res = await GET(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
     expect(res.status).toBe(500)
   })
 
@@ -151,7 +151,7 @@ describe('POST /api/cron/detect-patterns', () => {
       }),
     } as never)
 
-    const res = await POST(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
+    const res = await GET(makeRequest({ authHeader: `Bearer ${TEST_SECRET}` }))
     expect(res.status).toBe(500)
     const body = JSON.stringify(await res.json())
     expect(body).not.toContain('secret-internal-connection-details')

@@ -108,6 +108,7 @@ export async function assembleWeeklyReview(
       .from('goals')
       .select('id, title')
       .in('id', goalIds)
+      .eq('user_id', userId) // defense-in-depth: service-role bypasses RLS
 
     if (goalsError) {
       console.error(
@@ -342,13 +343,17 @@ export async function storeWeeklyReview(
   // expression unique constraint that Supabase JS cannot target by column name.
   const briefingDate = getIsoWeekStart(now)
 
+  // was_delivered is intentionally omitted from the upsert payload.
+  // On INSERT it defaults to false via the column default.
+  // On conflict (re-run in same week) we update only content/metadata — omitting
+  // was_delivered means it is NOT overwritten, preventing re-notification of users
+  // who were already notified about this week's review.
   const { error } = await db.from('daily_briefings').upsert(
     {
       user_id: userId,
       type: 'weekly',
       briefing_date: briefingDate,
       content: content as unknown as import('@/types/supabase').Json,
-      was_delivered: false,
     },
     {
       onConflict: 'user_id,type,briefing_date',

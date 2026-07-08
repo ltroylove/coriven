@@ -121,10 +121,14 @@ export default async function TodayPage() {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date())
 
   // 9a — handle fetch error explicitly; PGRST116 = no row found (not a real error)
+  // Filter by type = 'daily' to avoid matching the weekly row when both share the
+  // same briefing_date (e.g. on Mondays, the weekly review is stored with the ISO
+  // week-start Monday as briefing_date, which can equal today's date).
   const { data: briefing, error: briefingError } = await supabase
     .from('daily_briefings')
     .select('*')
     .eq('user_id', user.id)
+    .eq('type', 'daily')
     .eq('briefing_date', today)
     .maybeSingle()
 

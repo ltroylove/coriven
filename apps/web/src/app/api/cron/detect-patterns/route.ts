@@ -1,5 +1,5 @@
 /**
- * POST /api/cron/detect-patterns
+ * GET /api/cron/detect-patterns
  *
  * Nightly cron job that analyzes each user's task-completion history for
  * behavioral patterns and writes results to `detected_patterns`.
@@ -28,7 +28,7 @@ function verifySecret(provided: string | null): boolean {
   }
 }
 
-export async function POST(request: Request) {
+export async function GET(request: Request) {
   // Auth check must be first — before any DB or business logic
   const authHeader = request.headers.get('Authorization')
   const token = authHeader?.replace('Bearer ', '') ?? null

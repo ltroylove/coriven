@@ -17,7 +17,8 @@ vi.mock('@/lib/supabase/api-server', () => ({
 }))
 
 const { createApiServerClient } = await import('@/lib/supabase/api-server')
-const { GET, NOTIFICATION_FREQUENCY_CAP_DAYS } = await import('../route')
+const { GET } = await import('../route')
+const { NOTIFICATION_FREQUENCY_CAP_DAYS } = await import('@/lib/constants/patterns')
 
 function makeRequest(opts: { bearerToken?: string } = {}) {
   const headers = new Headers()

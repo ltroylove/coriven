@@ -142,7 +142,8 @@ export function detectWeeklyReviewTime(
  *   - It has no linked completed tasks at all (last_task_completed_at is null)
  *     AND was created more than STALE_GOAL_THRESHOLD_DAYS ago.
  *
- * Goals with status 'completed' or 'cancelled' are excluded.
+ * Goals with terminal status ('achieved' or 'abandoned') are excluded.
+ * The actual goal_status enum is: active | achieved | paused | abandoned.
  */
 export function detectStaleGoals(
   goals: Array<{
@@ -155,7 +156,8 @@ export function detectStaleGoals(
   now: Date = new Date(),
 ): Array<{ id: string; title: string; daysSinceActivity: number }> {
   const cutoff = daysAgo(STALE_GOAL_THRESHOLD_DAYS, now)
-  const TERMINAL_STATUSES = new Set(['completed', 'cancelled'])
+  // Terminal statuses match the actual goal_status enum: active | achieved | paused | abandoned
+  const TERMINAL_STATUSES = new Set(['achieved', 'abandoned'])
 
   return goals
     .filter(g => !TERMINAL_STATUSES.has(g.status))
@@ -260,12 +262,13 @@ async function fetchGoalsWithLastCompletion(
   userId: string,
   db: ReturnType<typeof createServiceClient>,
 ): Promise<StaleGoalRow[]> {
-  // Fetch active (non-terminal) goals for this user
+  // Fetch active (non-terminal) goals for this user.
+  // Terminal statuses are 'achieved' and 'abandoned' per the goal_status enum.
   const { data: goals, error: goalsError } = await db
     .from('goals')
     .select('id, title, created_at, status')
     .eq('user_id', userId)
-    .not('status', 'in', '("completed","cancelled")')
+    .not('status', 'in', '("achieved","abandoned")')
 
   if (goalsError) {
     throw new Error(`Failed to fetch goals for stale-goal detection (user ${userId}): ${goalsError.message}`)
@@ -359,14 +362,45 @@ export async function runStaleGoalDetection(
   let written = 0
   let deactivated = 0
 
-  // 4. Upsert one row per currently-stale goal
+  // 4. INSERT or UPDATE one row per currently-stale goal.
+  //
+  // We avoid .upsert({ onConflict: '...' }) because PostgREST does not match
+  // partial unique indexes without predicates, causing "no unique or exclusion
+  // constraint" runtime errors.  Instead we use an explicit SELECT-then-write.
   for (const goal of staleGoals) {
     const description = staleGoalDescription(goal.title, goal.daysSinceActivity)
+    const existing = existingByGoalId.get(goal.id)
 
-    const { error: upsertError } = await db
-      .from('detected_patterns')
-      .upsert(
-        {
+    if (existing) {
+      // UPDATE the existing row
+      const { error: updateError } = await db
+        .from('detected_patterns')
+        .update({
+          description,
+          last_detected_at: now.toISOString(),
+          is_active: true,
+          updated_at: now.toISOString(),
+        })
+        .eq('id', existing.id)
+        .eq('user_id', userId) // defense-in-depth on top of RLS
+
+      if (updateError) {
+        console.error(
+          JSON.stringify({
+            event: 'stale_goal_detection.update_error',
+            userId,
+            goalId: goal.id,
+            error: updateError.message,
+          }),
+        )
+      } else {
+        written++
+      }
+    } else {
+      // INSERT a new row
+      const { error: insertError } = await db
+        .from('detected_patterns')
+        .insert({
           user_id: userId,
           pattern_type: 'stale_goal',
           goal_id: goal.id,
@@ -374,22 +408,20 @@ export async function runStaleGoalDetection(
           last_detected_at: now.toISOString(),
           is_active: true,
           updated_at: now.toISOString(),
-        },
-        // Conflict target matches the partial unique index on (user_id, pattern_type, goal_id)
-        { onConflict: 'user_id,pattern_type,goal_id' },
-      )
+        })
 
-    if (upsertError) {
-      console.error(
-        JSON.stringify({
-          event: 'stale_goal_detection.upsert_error',
-          userId,
-          goalId: goal.id,
-          error: upsertError.message,
-        }),
-      )
-    } else {
-      written++
+      if (insertError) {
+        console.error(
+          JSON.stringify({
+            event: 'stale_goal_detection.insert_error',
+            userId,
+            goalId: goal.id,
+            error: insertError.message,
+          }),
+        )
+      } else {
+        written++
+      }
     }
   }
 
@@ -483,55 +515,9 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
   const { written: staleWritten, deactivated: staleDeactivated } = await runStaleGoalDetection(userId, now)
 
   // -------------------------------------------------------------------------
-  // 3. Cold-start guard for habit/behavior patterns
-  // -------------------------------------------------------------------------
-  if (!hasSufficientHistory(completions.length)) {
-    console.log(
-      JSON.stringify({
-        event: 'pattern_detection.cold_start',
-        userId,
-        totalCompletions: completions.length,
-        threshold: GYM_DAYS_MIN_OCCURRENCES,
-      }),
-    )
-    return { userId, patternsWritten: staleWritten, patternsDeactivated: staleDeactivated }
-  }
-
-  // -------------------------------------------------------------------------
-  // 4. Run habit/behavior pattern detection
-  // -------------------------------------------------------------------------
-  type PatternCandidate = { pattern_type: string; description: string }
-  const candidates: PatternCandidate[] = []
-
-  // gym_days
-  const gymDays = detectGymDays(completions, now)
-  if (gymDays.length > 0) {
-    candidates.push({
-      pattern_type: 'gym_days',
-      description: gymDaysDescription(gymDays),
-    })
-  }
-
-  // weekly_review_time
-  const reviewDays = detectWeeklyReviewTime(completions, now)
-  if (reviewDays.length > 0) {
-    candidates.push({
-      pattern_type: 'weekly_review_time',
-      description: weeklyReviewDescription(reviewDays),
-    })
-  }
-
-  // follow_up_needed
-  const followUpTasks = detectFollowUpNeeded(allInProgress, now)
-  if (followUpTasks.length > 0) {
-    candidates.push({
-      pattern_type: 'follow_up_needed',
-      description: followUpDescription(followUpTasks),
-    })
-  }
-
-  // -------------------------------------------------------------------------
-  // 5. Fetch existing non-goal patterns for deactivation logic
+  // 3. Fetch existing non-goal patterns — needed for both deactivation and
+  //    explicit SELECT-then-write logic (Fix 3: partial index upsert workaround).
+  //    This must run BEFORE the cold-start guard so deactivation always executes.
   // -------------------------------------------------------------------------
   const { data: existingPatterns, error: existingError } = await db
     .from('detected_patterns')
@@ -543,16 +529,110 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
     throw new Error(`Failed to fetch existing patterns for user ${userId}: ${existingError.message}`)
   }
 
+  // Build a lookup map: pattern_type → existing row (for non-goal patterns)
+  const existingNonGoalByType = new Map<string, { id: string; is_active: boolean; last_detected_at: string }>()
+  for (const row of existingPatterns ?? []) {
+    existingNonGoalByType.set(row.pattern_type, { id: row.id, is_active: row.is_active, last_detected_at: row.last_detected_at })
+  }
+
   // -------------------------------------------------------------------------
-  // 6. Upsert detected non-goal patterns (idempotent on user_id, pattern_type where goal_id IS NULL)
+  // 4. Cold-start guard for habit/behavior pattern detection.
+  //
+  //    When cold-start conditions are met we skip NEW pattern detection but we
+  //    still run the deactivation pass below so that previously active patterns
+  //    from a user who has stopped completing tasks are correctly deactivated.
+  // -------------------------------------------------------------------------
+  const coldStart = !hasSufficientHistory(completions.length)
+
+  if (coldStart) {
+    console.log(
+      JSON.stringify({
+        event: 'pattern_detection.cold_start',
+        userId,
+        totalCompletions: completions.length,
+        threshold: GYM_DAYS_MIN_OCCURRENCES,
+      }),
+    )
+  }
+
+  // -------------------------------------------------------------------------
+  // 5. Run habit/behavior pattern detection (skipped on cold start)
+  // -------------------------------------------------------------------------
+  type PatternCandidate = { pattern_type: string; description: string }
+  const candidates: PatternCandidate[] = []
+
+  if (!coldStart) {
+    // gym_days
+    const gymDays = detectGymDays(completions, now)
+    if (gymDays.length > 0) {
+      candidates.push({
+        pattern_type: 'gym_days',
+        description: gymDaysDescription(gymDays),
+      })
+    }
+
+    // weekly_review_time
+    const reviewDays = detectWeeklyReviewTime(completions, now)
+    if (reviewDays.length > 0) {
+      candidates.push({
+        pattern_type: 'weekly_review_time',
+        description: weeklyReviewDescription(reviewDays),
+      })
+    }
+
+    // follow_up_needed
+    const followUpTasks = detectFollowUpNeeded(allInProgress, now)
+    if (followUpTasks.length > 0) {
+      candidates.push({
+        pattern_type: 'follow_up_needed',
+        description: followUpDescription(followUpTasks),
+      })
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 6. INSERT or UPDATE detected non-goal patterns.
+  //
+  //    We avoid .upsert({ onConflict: '...' }) because PostgREST does not match
+  //    partial unique indexes without predicates ("no unique or exclusion constraint
+  //    matching the ON CONFLICT specification"). Instead we use an explicit
+  //    SELECT-then-write pattern using the map built in step 3.
   // -------------------------------------------------------------------------
   let patternsWritten = staleWritten
 
   for (const candidate of candidates) {
-    const { error: upsertError } = await db
-      .from('detected_patterns')
-      .upsert(
-        {
+    const existing = existingNonGoalByType.get(candidate.pattern_type)
+
+    if (existing) {
+      // UPDATE existing row
+      const { error: updateError } = await db
+        .from('detected_patterns')
+        .update({
+          description: candidate.description,
+          last_detected_at: now.toISOString(),
+          is_active: true,
+          updated_at: now.toISOString(),
+        })
+        .eq('id', existing.id)
+        .eq('user_id', userId) // defense-in-depth on top of RLS
+
+      if (updateError) {
+        console.error(
+          JSON.stringify({
+            event: 'pattern_detection.update_error',
+            userId,
+            patternType: candidate.pattern_type,
+            error: updateError.message,
+          }),
+        )
+      } else {
+        patternsWritten++
+      }
+    } else {
+      // INSERT new row (goal_id defaults to NULL)
+      const { error: insertError } = await db
+        .from('detected_patterns')
+        .insert({
           user_id: userId,
           pattern_type: candidate.pattern_type,
           description: candidate.description,
@@ -560,27 +640,27 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
           is_active: true,
           updated_at: now.toISOString(),
           // goal_id intentionally omitted — defaults to NULL for non-goal patterns
-        },
-        { onConflict: 'user_id,pattern_type' },
-      )
+        })
 
-    if (upsertError) {
-      console.error(
-        JSON.stringify({
-          event: 'pattern_detection.upsert_error',
-          userId,
-          patternType: candidate.pattern_type,
-          error: upsertError.message,
-        }),
-      )
-      // Continue to next pattern — per-user-pattern errors don't abort the job
-    } else {
-      patternsWritten++
+      if (insertError) {
+        console.error(
+          JSON.stringify({
+            event: 'pattern_detection.insert_error',
+            userId,
+            patternType: candidate.pattern_type,
+            error: insertError.message,
+          }),
+        )
+      } else {
+        patternsWritten++
+      }
     }
   }
 
   // -------------------------------------------------------------------------
-  // 7. Deactivate non-goal patterns not re-confirmed in PATTERN_DEACTIVATE_AFTER_DAYS
+  // 7. Deactivate non-goal patterns not re-confirmed in PATTERN_DEACTIVATE_AFTER_DAYS.
+  //    This always runs — even on cold start — so patterns from users who have
+  //    stopped completing tasks are correctly deactivated.
   //    (stale_goal rows are handled separately by runStaleGoalDetection)
   // -------------------------------------------------------------------------
   const detectedPatternTypes = new Set(candidates.map(c => c.pattern_type))
@@ -623,6 +703,7 @@ export async function runPatternDetection(userId: string): Promise<PatternDetect
       patternsWritten,
       patternsDeactivated,
       detectedTypes: Array.from(detectedPatternTypes),
+      coldStart,
     }),
   )
 

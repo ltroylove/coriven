@@ -596,7 +596,6 @@ const PUSH_NOTIFICATION_MAX_BODY_CHARS = 100
 async function handlePushNotification(input: Input, userId: string): Promise<HandlerResult> {
   const title = String(input.title ?? '').trim()
   const body = String(input.body ?? '').trim()
-  const patternType = input.pattern_type ? String(input.pattern_type).trim() : 'push_notification'
 
   if (!title) {
     return { content: 'title is required.', is_error: true }
@@ -612,11 +611,18 @@ async function handlePushNotification(input: Input, userId: string): Promise<Han
   }
 
   const db = createServiceClient()
-  const now = new Date().toISOString()
+  const nowDate = new Date()
+  const now = nowDate.toISOString()
+
+  // Each push_notification is an independent event and must never conflict with
+  // other rows under the partial unique index UNIQUE(user_id, pattern_type)
+  // WHERE goal_id IS NULL.  We make pattern_type unique per notification by
+  // appending a millisecond timestamp suffix, so concurrent or repeated calls
+  // never collide.
+  const patternType = `push_notification_${nowDate.getTime()}`
 
   // Insert a detected_patterns row with last_notified_at = null so the tray picks
-  // it up on the next poll cycle. This is an immediate insert (not an upsert) because
-  // push_notification rows are not deduplicated by goal — each call creates a new row.
+  // it up on the next poll cycle.
   const { data, error } = await db
     .from('detected_patterns')
     .insert({

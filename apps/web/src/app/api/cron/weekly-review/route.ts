@@ -1,5 +1,5 @@
 /**
- * POST /api/cron/weekly-review
+ * GET /api/cron/weekly-review
  *
  * Friday 5pm Vercel Cron job that assembles a structured week-in-review
  * (wins, blockers, next-week focus) for every active user and stores it
@@ -29,7 +29,7 @@ function verifySecret(provided: string | null): boolean {
   }
 }
 
-export async function POST(request: Request) {
+export async function GET(request: Request) {
   // Auth check must be first — before any DB or business logic
   const authHeader = request.headers.get('Authorization')
   const token = authHeader?.replace('Bearer ', '') ?? null
