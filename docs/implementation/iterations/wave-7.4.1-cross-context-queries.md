@@ -9,13 +9,13 @@ status: Planning
 domain: implementation
 product:
   - coriven
-epic: "6"
+epic: "7"
 feature: "7.4"
 wave: "7.4.1"
 agents: []
 tags: [coriven, proactive, cross-context, chat, memory, goals, email, sentinel]
 relateddocuments:
-  - "docs/implementation/_main/epic-6-proactive-intelligence.md"
+  - "docs/implementation/_main/epic-7-proactive-intelligence.md"
   - "docs/architecture/_main/04-Architecture.md"
   - "docs/architecture/_main/03-Business-Requirements.md"
   - "docs/architecture/_main/05-User-Experience.md"
@@ -28,9 +28,9 @@ relateddocuments:
 
 | Field | Value |
 |---|---|
-| Wave ID | 6.4.1 |
-| Feature | 6.4 — Cross-Context Queries |
-| Epic | 6 — Proactive Intelligence |
+| Wave ID | 7.4.1 |
+| Feature | 7.4 — Cross-Context Queries |
+| Epic | 7 — Proactive Intelligence |
 | Status | Planning |
 | Scope | Enable the chat engine to answer questions that span tasks, goals, memory (entities + semantic memories), and email metadata (when Epic 5 is connected) in a single response; no new storage required — compose context across existing stores by extending the system prompt assembly and enabling coordinated tool calls |
 
@@ -44,7 +44,7 @@ relateddocuments:
 
 ## User Stories
 
-### Story 6.4.1.1 — System prompt directs Claude to compose cross-context answers
+### Story 7.4.1.1 — System prompt directs Claude to compose cross-context answers
 
 **As the** Chat Engine actor,
 **I want** a system prompt that explicitly instructs Claude to combine data from multiple enabled tools when answering holistic questions about a goal, project, or person,
@@ -61,9 +61,9 @@ relateddocuments:
 **Estimated hours:** 4h
 **Business Requirements:** Feature 8 (cross-context); UC-42; Blueprint §12 intro
 
-#### Task 6.4.1.1.1 — Extend system prompt with cross-context reasoning instructions
+#### Task 7.4.1.1.1 — Extend system prompt with cross-context reasoning instructions
 
-- **Parent Story:** 6.4.1.1
+- **Parent Story:** 7.4.1.1
 - **Agent:** Backend Engineer
 - **Estimation:** 4h
 - **Dependencies:** Existing `buildSystemPrompt` in `apps/web/src/lib/chat/engine.ts`; Epic 2 memory tools; Epic 4 goal tools (must be registered to detect enabled count)
@@ -72,7 +72,7 @@ relateddocuments:
 
 ---
 
-### Story 6.4.1.2 — Multi-store tool orchestration works within the existing loop
+### Story 7.4.1.2 — Multi-store tool orchestration works within the existing loop
 
 **As the** Primary User,
 **I want** Coriven to answer a question like "What's been happening with my gym project?" by combining task history, goal momentum, and memory in one response,
@@ -90,18 +90,18 @@ relateddocuments:
 **Estimated hours:** 5h
 **Business Requirements:** Feature 8 (cross-context); Blueprint §12 intro ("What's been happening with my gym project?")
 
-#### Task 6.4.1.2.1 — Validate and harden multi-tool orchestration in the chat loop
+#### Task 7.4.1.2.1 — Validate and harden multi-tool orchestration in the chat loop
 
-- **Parent Story:** 6.4.1.2
+- **Parent Story:** 7.4.1.2
 - **Agent:** Backend Engineer
 - **Estimation:** 5h
-- **Dependencies:** Task 6.4.1.1.1; Epic 2 memory tools registered; Epic 4 goal tools registered; existing tool-use loop in `engine.ts`
+- **Dependencies:** Task 7.4.1.1.1; Epic 2 memory tools registered; Epic 4 goal tools registered; existing tool-use loop in `engine.ts`
 - **Deliverables:** Integration test (`apps/web/src/__tests__/cross-context.test.ts`) that mocks tool results for tasks, goals, and memory and verifies the system prompt drives Claude to call all three; documented tool-call ordering guidelines in a code comment in `engine.ts`
 - **Acceptance Criteria:** Integration test passes with a mocked Claude response that exercises multi-tool orchestration; the test verifies at minimum two different store-type tools are called in a single turn; real end-to-end smoke test (manually run) confirms a cross-context question produces a response that mentions both task and goal data; no regression to single-store behavior for task-only users.
 
 ---
 
-### Story 6.4.1.3 — Email metadata is included in cross-context answers when Epic 5 is connected
+### Story 7.4.1.3 — Email metadata is included in cross-context answers when Epic 5 is connected
 
 **As the** Primary User (with Gmail integration active),
 **I want** a question like "What's been happening with my gym project?" to also surface relevant email threads,
@@ -118,18 +118,18 @@ relateddocuments:
 **Estimated hours:** 4h
 **Business Requirements:** Feature 8; Architecture email-privacy invariant
 
-#### Task 6.4.1.3.1 — Add `search_email_metadata` to the cross-context tool suite
+#### Task 7.4.1.3.1 — Add `search_email_metadata` to the cross-context tool suite
 
-- **Parent Story:** 6.4.1.3
+- **Parent Story:** 7.4.1.3
 - **Agent:** Backend Engineer
 - **Estimation:** 4h
-- **Dependencies:** Epic 5 `email_metadata` table and integration; existing tool registry pattern; Task 6.4.1.1.1
+- **Dependencies:** Epic 5 `email_metadata` table and integration; existing tool registry pattern; Task 7.4.1.1.1
 - **Deliverables:** `search_email_metadata` tool entry in `registry.ts`; handler in `handlers.ts` querying `email_metadata` with keyword filter; `ToolName` type updated; `tool_permissions` seed for the new tool
 - **Acceptance Criteria:** Tool queries `email_metadata` for the authenticated user filtered by a `query` string against subject/sender fields; returns at most 10 results ordered by date descending; email bodies are not fetched (handler queries `email_metadata` only, never `email_body`); handler returns empty array when no results; `is_error: true` on DB failure; tool is absent from system prompt when disabled in `tool_permissions`; RLS enforced.
 
 ---
 
-### Story 6.4.1.4 — Cross-context answers are honest about missing or disabled data
+### Story 7.4.1.4 — Cross-context answers are honest about missing or disabled data
 
 **As the** Primary User,
 **I want** Coriven to tell me clearly when it lacks data to answer a cross-context question,
@@ -139,25 +139,25 @@ relateddocuments:
 - When a cross-context question is asked and all relevant tools return empty results, the assistant response acknowledges the lack of data explicitly (e.g., "I don't have any tasks, goals, or emails related to your gym project yet").
 - When a relevant tool (e.g., memory search) is disabled, the assistant does not pretend to have searched it; it optionally mentions "Enable memory tools to include that context."
 - The assistant never constructs a plausible-sounding answer by interpolating across empty tool results.
-- These behaviors are enforced by the system prompt instructions added in Task 6.4.1.1.1.
+- These behaviors are enforced by the system prompt instructions added in Task 7.4.1.1.1.
 - Validated by a unit test that mocks all tools to return empty results and asserts the response contains no fabricated task or goal data.
 
 **Priority:** High
 **Estimated hours:** 3h
 **Business Requirements:** AI-Specific Business Rule: "untrusted content cannot trigger actions"; by extension, the system must not fabricate trust-critical data
 
-#### Task 6.4.1.4.1 — Write honesty-enforcement tests for cross-context queries
+#### Task 7.4.1.4.1 — Write honesty-enforcement tests for cross-context queries
 
-- **Parent Story:** 6.4.1.4
+- **Parent Story:** 7.4.1.4
 - **Agent:** Backend Engineer
 - **Estimation:** 3h
-- **Dependencies:** Task 6.4.1.1.1; Task 6.4.1.2.1 (test infrastructure)
+- **Dependencies:** Task 7.4.1.1.1; Task 7.4.1.2.1 (test infrastructure)
 - **Deliverables:** Test cases in `cross-context.test.ts` covering: (a) all tools return empty → response contains acknowledgment string; (b) memory tool disabled → system prompt does not mention memory results; (c) partial results (tasks found, goals empty) → response accurately reflects partial data
 - **Acceptance Criteria:** All three test cases pass; tests use realistic mocked Claude responses; no test fabricates data in mock responses used as inputs; test file is part of the standard `npm test` run.
 
 ---
 
-### Story 6.4.1.5 — Cross-context query performance is acceptable within the chat turn budget
+### Story 7.4.1.5 — Cross-context query performance is acceptable within the chat turn budget
 
 **As the** Primary User,
 **I want** cross-context queries to complete within a reasonable time frame,
@@ -173,12 +173,12 @@ relateddocuments:
 **Priority:** Low
 **Estimated hours:** 2h
 
-#### Task 6.4.1.5.1 — Review and document cross-context query latency profile
+#### Task 7.4.1.5.1 — Review and document cross-context query latency profile
 
-- **Parent Story:** 6.4.1.5
+- **Parent Story:** 7.4.1.5
 - **Agent:** Backend Engineer
 - **Estimation:** 2h
-- **Dependencies:** Task 6.4.1.2.1 (multi-store orchestration working)
+- **Dependencies:** Task 7.4.1.2.1 (multi-store orchestration working)
 - **Deliverables:** A comment block in `engine.ts` documenting the expected latency profile for a 3-store cross-context query; any N+1 fixes identified in existing tool handlers during the review
 - **Acceptance Criteria:** Comment documents the turn structure (calls to Anthropic API, DB round-trips); any N+1 queries in memory or goal tool handlers are resolved before this wave closes; no new performance regressions vs. single-store queries.
 
@@ -189,19 +189,19 @@ relateddocuments:
 ```
 Epic 2 (memory tools: entity profiles, semantic search) — prerequisite
 Epic 4 (goal tools: list_goals, goal detail) — prerequisite
-Epic 5 (email_metadata, search_email_metadata) — soft prerequisite (Story 6.4.1.3 blocked; others proceed)
+Epic 5 (email_metadata, search_email_metadata) — soft prerequisite (Story 7.4.1.3 blocked; others proceed)
 
-6.4.1.1.1  (extend system prompt)
-    └─► 6.4.1.2.1  (multi-tool orchestration + integration test)
-           └─► 6.4.1.4.1  (honesty-enforcement tests)
-           └─► 6.4.1.5.1  (latency profile review)
+7.4.1.1.1  (extend system prompt)
+    └─► 7.4.1.2.1  (multi-tool orchestration + integration test)
+           └─► 7.4.1.4.1  (honesty-enforcement tests)
+           └─► 7.4.1.5.1  (latency profile review)
 
-6.4.1.3.1  (search_email_metadata tool) — independent; needs only Epic 5 and tool registry
+7.4.1.3.1  (search_email_metadata tool) — independent; needs only Epic 5 and tool registry
 ```
 
-**Critical path:** System prompt extension (6.4.1.1.1) → multi-tool orchestration (6.4.1.2.1) → honesty tests (6.4.1.4.1). Email tool and latency review parallelize after orchestration is done.
+**Critical path:** System prompt extension (7.4.1.1.1) → multi-tool orchestration (7.4.1.2.1) → honesty tests (7.4.1.4.1). Email tool and latency review parallelize after orchestration is done.
 
-**Parallelizable:** 6.4.1.3.1 (email tool) can be implemented in parallel with 6.4.1.1.1 if Epic 5 is deployed.
+**Parallelizable:** 7.4.1.3.1 (email tool) can be implemented in parallel with 7.4.1.1.1 if Epic 5 is deployed.
 
 ## Definition of Done
 
@@ -286,23 +286,23 @@ No new Vercel Cron entries — cross-context is a real-time chat feature.
 
 - Epic 2 memory tools (`search_memories`, `get_entity_profiles` or equivalent) must be registered in `TOOL_REGISTRY` and deployed before cross-context orchestration produces useful answers.
 - Epic 4 goal tools (at minimum a `list_goals` or `get_goal` tool) must be registered before cross-context queries span goals.
-- Epic 5 `email_metadata` table and the `search_email_metadata` tool (Task 6.4.1.3.1) are required only for Story 6.4.1.3; the rest of the wave proceeds without them.
+- Epic 5 `email_metadata` table and the `search_email_metadata` tool (Task 7.4.1.3.1) are required only for Story 7.4.1.3; the rest of the wave proceeds without them.
 - The `search_email_metadata` tool must be seeded into `tool_permissions` for users who have connected their Gmail integration (Epic 5 connection status determines default enablement).
 
 ## Risks and Blockers
 
 | Risk | Impact | Probability | Mitigation |
 |---|---|---|---|
-| Epic 2 or Epic 4 tools not yet registered | High | Med | Wave 7.4.1 is blocked on those tool registrations; document as prerequisites; Stories 6.4.1.1 and 6.4.1.2 can be partially implemented against stubs |
+| Epic 2 or Epic 4 tools not yet registered | High | Med | Wave 7.4.1 is blocked on those tool registrations; document as prerequisites; Stories 7.4.1.1 and 7.4.1.2 can be partially implemented against stubs |
 | Multi-tool turn count exceeds the 10-turn cap | Med | Low | Three-store query requires ~2 Anthropic round-trips (tool call + synthesis); well within cap; monitor turn counts in production |
 | Claude ignores cross-context system prompt instruction | Med | Low | System prompt extension is concise and direct; integration test validates the behavior against a mocked Claude response; real model behavior verified in manual smoke test |
 | Email tool surfaces sensitive metadata | Med | Low | Handler is strictly limited to `email_metadata` table; no body fields; privacy invariant enforced at the handler level; reviewed in code review |
-| Cross-context answers feel slow to users | Low | Med | Latency profile documented (Task 6.4.1.5.1); no new hard budgets imposed at this wave; real-time streaming still covers the user-facing wait |
+| Cross-context answers feel slow to users | Low | Med | Latency profile documented (Task 7.4.1.5.1); no new hard budgets imposed at this wave; real-time streaming still covers the user-facing wait |
 | Hallucination in synthesized cross-context answer | High | Low | Honesty-enforcement instruction in system prompt; empty-result tests; manual spot-check monitoring in first month |
 
 ## Related Documentation
 
-- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 7.4
+- Epic: `docs/implementation/_main/epic-7-proactive-intelligence.md` — Feature 7.4
 - Architecture: `docs/architecture/_main/04-Architecture.md` — Chat Engine, Tool Registry, data model (§14)
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` — Feature 8, AI-Specific Business Rules
 - UX: `docs/architecture/_main/05-User-Experience.md` — AI transparency, explainability, error recovery

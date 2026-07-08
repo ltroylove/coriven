@@ -9,13 +9,13 @@ status: Planning
 domain: implementation
 product:
   - coriven
-epic: "6"
+epic: "7"
 feature: "7.2"
 wave: "7.2.1"
 agents: []
 tags: [coriven, proactive, stale-goal, nudge, tray, notifications, momentum, goals]
 relateddocuments:
-  - "docs/implementation/_main/epic-6-proactive-intelligence.md"
+  - "docs/implementation/_main/epic-7-proactive-intelligence.md"
   - "docs/architecture/_main/04-Architecture.md"
   - "docs/architecture/_main/03-Business-Requirements.md"
   - "docs/architecture/_main/05-User-Experience.md"
@@ -29,9 +29,9 @@ relateddocuments:
 
 | Field | Value |
 |---|---|
-| Wave ID | 6.2.1 |
-| Feature | 6.2 — Stale-Goal Nudges (Proactive Delivery) |
-| Epic | 6 — Proactive Intelligence |
+| Wave ID | 7.2.1 |
+| Feature | 7.2 — Stale-Goal Nudges (Proactive Delivery) |
+| Epic | 7 — Proactive Intelligence |
 | Status | Planning |
 | Scope | Extend the nightly cron (or add a dedicated job) to detect goals with no linked task activity for 14 days; deliver a single tray nudge per stale goal per 7-day window; surface stale goals in the daily briefing; expose the `push_notification` tool for chat-driven nudges |
 
@@ -45,7 +45,7 @@ relateddocuments:
 
 ## User Stories
 
-### Story 6.2.1.1 — Stale goals are detected nightly and stored as patterns
+### Story 7.2.1.1 — Stale goals are detected nightly and stored as patterns
 
 **As the** Pattern-Detection Cron actor,
 **I want** to identify goals with no linked task-completion activity for 14 days and write them to `detected_patterns` as `stale_goal` entries,
@@ -63,9 +63,9 @@ relateddocuments:
 **Estimated hours:** 5h
 **Business Requirements:** Feature 8, UC-40 (Stale-goal nudge)
 
-#### Task 6.2.1.1.1 — Extend pattern-detection job with stale-goal analysis
+#### Task 7.2.1.1.1 — Extend pattern-detection job with stale-goal analysis
 
-- **Parent Story:** 6.2.1.1
+- **Parent Story:** 7.2.1.1
 - **Agent:** Backend Engineer
 - **Estimation:** 5h
 - **Dependencies:** Wave 7.1.1 complete (`detected_patterns` table and job framework); Epic 4 `goals` and `tasks` tables with `completed_at` and goal-task linkage
@@ -74,7 +74,7 @@ relateddocuments:
 
 ---
 
-### Story 6.2.1.2 — Tray delivers one proactive nudge per stale goal per 7 days
+### Story 7.2.1.2 — Tray delivers one proactive nudge per stale goal per 7 days
 
 **As the** Primary User,
 **I want** to receive a tray notification when a goal I care about has had no activity for two weeks,
@@ -94,18 +94,18 @@ relateddocuments:
 **Estimated hours:** 3h
 **Business Requirements:** Feature 8, UC-40; UX calm-proactivity principle (§4.1)
 
-#### Task 6.2.1.2.1 — Verify stale-goal patterns flow through the existing tray notification path
+#### Task 7.2.1.2.1 — Verify stale-goal patterns flow through the existing tray notification path
 
-- **Parent Story:** 6.2.1.2
+- **Parent Story:** 7.2.1.2
 - **Agent:** Backend / Tray Engineer
 - **Estimation:** 3h
-- **Dependencies:** Task 6.2.1.1.1; Wave 7.1.1 tray integration (Task 6.1.1.4.2)
+- **Dependencies:** Task 7.2.1.1.1; Wave 7.1.1 tray integration (Task 6.1.1.4.2)
 - **Deliverables:** End-to-end integration test or manual test log confirming a stale-goal pattern fires a tray notification with the correct message; any required updates to the tray's `notifyPattern` call to handle `stale_goal` type specifically (e.g., no sound, specific icon if applicable)
 - **Acceptance Criteria:** A synthetic `stale_goal` pattern row with `last_notified_at = null` causes the tray to fire a notification on the next poll; the notification text matches the `description` field; `last_notified_at` is set after firing; re-polling within 7 days does not re-fire.
 
 ---
 
-### Story 6.2.1.3 — Stale goals surface in the daily briefing
+### Story 7.2.1.3 — Stale goals surface in the daily briefing
 
 **As the** Primary User,
 **I want** stale goals listed in the "Stalled" section of my daily briefing,
@@ -122,18 +122,18 @@ relateddocuments:
 **Estimated hours:** 4h
 **Business Requirements:** Feature 8 (daily briefing, stalled goals); UX Today/Briefing screen (§screen "Today / Briefing")
 
-#### Task 6.2.1.3.1 — Add stale-goal section to briefing assembly
+#### Task 7.2.1.3.1 — Add stale-goal section to briefing assembly
 
-- **Parent Story:** 6.2.1.3
+- **Parent Story:** 7.2.1.3
 - **Agent:** Backend Engineer
 - **Estimation:** 4h
-- **Dependencies:** Task 6.2.1.1.1 (stale-goal patterns exist); Epic 4 briefing assembly service
+- **Dependencies:** Task 7.2.1.1.1 (stale-goal patterns exist); Epic 4 briefing assembly service
 - **Deliverables:** Updated `apps/web/src/lib/jobs/briefing.ts` (or equivalent briefing assembly module) to include `detected_patterns WHERE pattern_type = 'stale_goal' AND is_active = true` in the stalled-goals section
 - **Acceptance Criteria:** Briefing row's stalled-goals section includes goal titles and inactivity counts from active `stale_goal` patterns; empty section is omitted from the briefing output; the query is user-scoped; no duplicate goals appear if a goal appears in both the momentum-stall model and the pattern model.
 
 ---
 
-### Story 6.2.1.4 — `push_notification` tool allows chat to surface a stale-goal nudge on demand
+### Story 7.2.1.4 — `push_notification` tool allows chat to surface a stale-goal nudge on demand
 
 **As the** Primary User,
 **I want** to ask Coriven in chat to remind me about a specific goal,
@@ -151,9 +151,9 @@ relateddocuments:
 **Estimated hours:** 5h
 **Business Requirements:** Feature 8; UC-42 (proactive tool)
 
-#### Task 6.2.1.4.1 — Implement `push_notification` tool and pending-notification poll endpoint
+#### Task 7.2.1.4.1 — Implement `push_notification` tool and pending-notification poll endpoint
 
-- **Parent Story:** 6.2.1.4
+- **Parent Story:** 7.2.1.4
 - **Agent:** Backend Engineer
 - **Estimation:** 5h
 - **Dependencies:** Task 6.1.1.1.1 (DB); existing tool registry pattern
@@ -168,14 +168,14 @@ relateddocuments:
 Wave 7.1.1 (detected_patterns table, job framework, tray path) — prerequisite
 Epic 4 (goals, tasks with completed_at, briefing assembly) — prerequisite
     │
-6.2.1.1.1  (stale-goal analysis in detection job)
-    ├─► 6.2.1.2.1  (tray notification path verification)
-    └─► 6.2.1.3.1  (briefing integration)
+7.2.1.1.1  (stale-goal analysis in detection job)
+    ├─► 7.2.1.2.1  (tray notification path verification)
+    └─► 7.2.1.3.1  (briefing integration)
 
-6.2.1.4.1  (push_notification tool) — independent; needs only DB and tool registry
+7.2.1.4.1  (push_notification tool) — independent; needs only DB and tool registry
 ```
 
-**Critical path:** Wave 7.1.1 complete + Epic 4 deployed → stale-goal analysis (6.2.1.1.1) → tray path (6.2.1.2.1). Briefing integration and `push_notification` tool parallelize after 6.2.1.1.1.
+**Critical path:** Wave 7.1.1 complete + Epic 4 deployed → stale-goal analysis (7.2.1.1.1) → tray path (7.2.1.2.1). Briefing integration and `push_notification` tool parallelize after 7.2.1.1.1.
 
 ## Definition of Done
 
@@ -223,7 +223,7 @@ Threshold (14 days) sourced from `STALE_GOAL_THRESHOLD_DAYS` constant. Parameter
 | Response | `is_error: false` + confirmation string, or `is_error: true` with message |
 | Body validation | Server-side length check ≤ 100 chars; returns error if exceeded |
 
-**No new cron endpoints** — stale-goal detection is part of the existing `/api/cron/detect-patterns` job extended in Task 6.2.1.1.1.
+**No new cron endpoints** — stale-goal detection is part of the existing `/api/cron/detect-patterns` job extended in Task 7.2.1.1.1.
 
 **No new tray endpoints** — stale-goal patterns flow through `/api/patterns/new` from Wave 7.1.1.
 
@@ -256,7 +256,7 @@ No new UI screens required. The briefing's stalled-goals section is an update to
 
 - Wave 7.1.1 must be fully deployed (`detected_patterns` table, nightly job, tray path, frequency-cap mechanism).
 - Epic 4 goals and tasks tables must be populated with real goal-task linkage and `completed_at` timestamps.
-- Epic 4 briefing assembly service must exist before Task 6.2.1.3.1 can be implemented.
+- Epic 4 briefing assembly service must exist before Task 7.2.1.3.1 can be implemented.
 
 ## Risks and Blockers
 
@@ -264,12 +264,12 @@ No new UI screens required. The briefing's stalled-goals section is an update to
 |---|---|---|---|
 | Epic 4 not deployed (no goals/tasks data) | High | Med | Wave is blocked on Epic 4; explicit prerequisite |
 | Nudges feel naggy if threshold too low | Med | Med | Default 14-day threshold; frequency cap enforced; user can see/dismiss in briefing |
-| Goal-task linkage not implemented in Epic 4 | High | Low | Stale-goal query depends on `tasks.goal_id`; verify this column exists before starting 6.2.1.1.1 |
+| Goal-task linkage not implemented in Epic 4 | High | Low | Stale-goal query depends on `tasks.goal_id`; verify this column exists before starting 7.2.1.1.1 |
 | `push_notification` misused to create noisy notification flood | Low | Low | Tool is gated by `tool_permissions`; frequency cap still applies |
 
 ## Related Documentation
 
-- Epic: `docs/implementation/_main/epic-6-proactive-intelligence.md` — Feature 7.2
+- Epic: `docs/implementation/_main/epic-7-proactive-intelligence.md` — Feature 7.2
 - Architecture: `docs/architecture/_main/04-Architecture.md` — §14.5, jobs/cron, §7.3 (momentum/stale model)
 - ADR-010: `docs/architecture/decisions/ADR-010-scheduled-proactive-jobs.md`
 - Business Requirements: `docs/architecture/_main/03-Business-Requirements.md` — Feature 8, UC-40
