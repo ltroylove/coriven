@@ -245,7 +245,7 @@ export async function assembleWeeklyReview(
       taskId: t.id,
       title: t.title,
       dueAt: t.due_at!,
-      priority: t.priority,
+      priority: t.priority as 'high' | 'urgent',
     }))
 
   // -------------------------------------------------------------------------

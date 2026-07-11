@@ -31,7 +31,7 @@ export interface WeeklyReviewNextWeekTask {
   /** ISO-8601 due date */
   dueAt: string
   /** 'high' | 'urgent' */
-  priority: string
+  priority: 'high' | 'urgent'
 }
 
 /**

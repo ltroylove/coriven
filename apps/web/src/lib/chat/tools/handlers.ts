@@ -545,7 +545,9 @@ async function handleSearchEmailMetadata(input: Input, userId: string): Promise<
   const rawLimit = typeof input.limit === 'number' ? input.limit : SEARCH_EMAIL_METADATA_DEFAULT_LIMIT
   const limit = Math.min(Math.max(1, Math.floor(rawLimit)), SEARCH_EMAIL_METADATA_MAX_LIMIT)
 
-  const pattern = `%${query}%`
+  // Escape ILIKE metacharacters so user input is treated as a literal substring.
+  const escaped = query.replace(/%/g, '\\%').replace(/_/g, '\\_')
+  const pattern = `%${escaped}%`
 
   try {
     const db = createServiceClient()
@@ -676,6 +678,7 @@ async function handleDetectPatterns(input: Input, userId: string): Promise<Handl
       .select('id, pattern_type, description, last_detected_at, last_notified_at, is_active, created_at, updated_at')
       .eq('user_id', userId) // defensive: RLS also enforces this
       .eq('is_active', isActive)
+      .not('pattern_type', 'like', 'push_notification_%') // exclude one-shot push delivery rows
       .order('last_detected_at', { ascending: false })
 
     if (input.pattern_type) {

@@ -25,11 +25,13 @@ export type SSEEvent =
 // loadToolPermissions can count how many stores the user has access to and
 // buildSystemPrompt can decide whether to inject the cross-context section.
 
+// Only read/query tools count toward store-type enablement — write-only tools (create_task,
+// save_memory, etc.) cannot satisfy a cross-context query and must not trigger the prompt injection.
 const STORE_TYPE_TOOLS: Record<string, string[]> = {
-  tasks:  ['list_tasks', 'create_task', 'update_task', 'delete_task', 'add_reminder', 'remove_reminder', 'snooze_reminder'],
-  goals:  ['list_goals', 'create_goal', 'update_goal', 'set_goal_momentum', 'create_project'],
-  memory: ['recall_memories', 'save_memory', 'upsert_entity', 'update_user_context', 'summarize_conversation'],
-  email:  ['search_email_metadata', 'get_email_thread'],
+  tasks:  ['list_tasks'],
+  goals:  ['list_goals'],
+  memory: ['recall_memories'],
+  email:  ['search_email_metadata'],
 }
 
 /** Derive the set of enabled store types from a list of enabled tool names. */

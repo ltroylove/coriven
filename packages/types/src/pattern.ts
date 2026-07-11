@@ -5,11 +5,15 @@
 /** The four supported pattern types produced by the nightly detection job. */
 export type PatternType = 'gym_days' | 'weekly_review_time' | 'stale_goal' | 'follow_up_needed'
 
+/** push_notification tool uses a timestamped pattern_type to avoid unique-constraint collisions.
+ *  These rows are ephemeral delivery vehicles, not detected patterns. */
+export type PatternTypeOrPush = PatternType | `push_notification_${string}`
+
 /** A single detected behavioral pattern row. */
 export interface DetectedPattern {
   id: string
   user_id: string
-  pattern_type: PatternType
+  pattern_type: PatternTypeOrPush
   description: string
   last_detected_at: string
   last_notified_at: string | null

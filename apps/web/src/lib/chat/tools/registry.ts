@@ -25,7 +25,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'generate_weekly_review',
   'submit_for_approval',
   'get_email_thread',
-  'search_email_metadata',
   'detect_patterns',
   'push_notification',
 ]

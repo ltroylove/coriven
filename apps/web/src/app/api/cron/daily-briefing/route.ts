@@ -73,7 +73,7 @@ export async function GET(request: Request) {
             content: briefingContent as unknown as Json,
             was_delivered: false,
           },
-          { onConflict: 'user_id,briefing_date', ignoreDuplicates: true },
+          { onConflict: 'user_id,type,briefing_date', ignoreDuplicates: true },
         )
 
       if (upsertError) {

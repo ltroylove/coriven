@@ -37,19 +37,37 @@ export async function POST(
     return NextResponse.json({ error: 'Pattern ID is required' }, { status: 400 })
   }
 
-  // 2. Update last_notified_at — scoped to user for defense-in-depth
+  // 2. Fetch pattern to determine type before updating
+  const { data: existing, error: fetchError } = await supabase
+    .from('detected_patterns')
+    .select('id, pattern_type')
+    .eq('id', patternId)
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .single()
+
+  if (fetchError || !existing) {
+    return NextResponse.json({ error: 'Pattern not found' }, { status: 404 })
+  }
+
+  // push_notification rows are one-shot delivery vehicles — deactivate immediately on acknowledge
+  // so they never resurface after the 7-day frequency cap expires.
+  const isPushNotification = existing.pattern_type.startsWith('push_notification_')
   const now = new Date().toISOString()
+
   const { data, error: updateError } = await supabase
     .from('detected_patterns')
-    .update({ last_notified_at: now, updated_at: now })
+    .update({
+      last_notified_at: now,
+      updated_at: now,
+      ...(isPushNotification ? { is_active: false } : {}),
+    })
     .eq('id', patternId)
-    .eq('user_id', user.id) // RLS also enforces this
-    .eq('is_active', true)
+    .eq('user_id', user.id)
     .select('id')
     .single()
 
   if (updateError || !data) {
-    // Row not found or RLS rejected — treat as 404
     return NextResponse.json({ error: 'Pattern not found' }, { status: 404 })
   }
 

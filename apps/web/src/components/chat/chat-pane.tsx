@@ -134,7 +134,10 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
       if (event.contextFallback) setContextFallbackToast(true)
       return
     }
-    if (event.type === 'error') return
+    if (event.type === 'error') {
+      setIsBuildingContext(false)
+      return
+    }
     setIsBuildingContext(false)
     setMessages(prev => {
       const idx = prev.findIndex(m => m.id === assistantId)
