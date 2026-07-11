@@ -1,16 +1,13 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { MessageSquare, History } from 'lucide-react'
 import { signOut } from '@/app/(auth)/signin/actions'
 import { usePanel } from '@/components/providers/panel-provider'
+import { useActiveConversation } from '@/components/providers/conversation-provider'
 import { SURFACE_REGISTRY } from '@/lib/surfaces/registry'
 import type { SurfaceId } from '@/lib/surfaces/registry'
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const PANEL_CONV_KEY = 'chat-panel-conversation-id'
+import { HistoryFlyout } from '@/components/chat/history-flyout'
 
 // Rail-visible surfaces from the registry (declaration order = rail order)
 const RAIL_SURFACES = SURFACE_REGISTRY.filter((e) => e.rail)
@@ -85,78 +82,17 @@ function RailButton({
 }
 
 // ---------------------------------------------------------------------------
-// History flyout placeholder (focus-trapped, Esc closes)
-// ---------------------------------------------------------------------------
-function HistoryFlyout({ onClose }: { onClose: () => void }) {
-  const dialogRef = useRef<HTMLDivElement>(null)
-
-  // Focus the dialog on open
-  useEffect(() => {
-    dialogRef.current?.focus()
-  }, [])
-
-  // Esc closes
-  useEffect(() => {
-    function handler(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onClose])
-
-  return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40"
-        aria-hidden
-        onClick={onClose}
-      />
-      {/* Flyout panel */}
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Conversation history"
-        tabIndex={-1}
-        className={[
-          'fixed left-14 top-4 z-50 w-72',
-          'rounded-lg border border-gray-700 bg-gray-900 shadow-xl',
-          'p-4 text-sm text-gray-300 focus:outline-none',
-        ].join(' ')}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <span className="font-medium text-gray-100">Conversation history</span>
-          <button
-            type="button"
-            aria-label="Close history"
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-100 transition-colors"
-          >
-            ✕
-          </button>
-        </div>
-        <p className="text-gray-500 text-xs leading-relaxed">
-          {/* TODO(9.1.2): Replace with real conversation list from server-side conversations (C1). */}
-          Conversation history arrives with server-side conversations.
-        </p>
-      </div>
-    </>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Rail
 // ---------------------------------------------------------------------------
 interface RailProps {
   userEmail: string
-  /** React key for the ChatPane — increment to remount (new chat) */
-  onNewChat: () => void
 }
 
-export function Rail({ userEmail, onNewChat }: RailProps) {
+export function Rail({ userEmail }: RailProps) {
   const { openSurface, openPanel } = usePanel()
+  const { newConversation } = useActiveConversation()
   const [historyOpen, setHistoryOpen] = useState(false)
+  const historyTriggerRef = useRef<HTMLButtonElement>(null)
 
   const handleNavClick = useCallback(
     (surface: SurfaceId) => {
@@ -166,11 +102,14 @@ export function Rail({ userEmail, onNewChat }: RailProps) {
   )
 
   const handleNewChat = useCallback(() => {
-    // TODO(9.1.2): rewire to unified conversation store (C1)
-    const newId = crypto.randomUUID()
-    localStorage.setItem(PANEL_CONV_KEY, newId)
-    onNewChat()
-  }, [onNewChat])
+    newConversation()
+  }, [newConversation])
+
+  const handleHistoryClose = useCallback(() => {
+    setHistoryOpen(false)
+    // Restore focus to the trigger after the flyout closes (a11y).
+    historyTriggerRef.current?.focus()
+  }, [])
 
   // Middle group: rail-visible surfaces EXCEPT settings (goes to bottom)
   const middleSurfaces = RAIL_SURFACES.filter((e) => e.surface !== 'settings')
@@ -215,6 +154,7 @@ export function Rail({ userEmail, onNewChat }: RailProps) {
       {/* History trigger */}
       <RailTooltip label="Conversation history">
         <button
+          ref={historyTriggerRef}
           type="button"
           aria-label="Conversation history"
           aria-haspopup="dialog"
@@ -230,7 +170,7 @@ export function Rail({ userEmail, onNewChat }: RailProps) {
         </button>
       </RailTooltip>
 
-      {historyOpen && <HistoryFlyout onClose={() => setHistoryOpen(false)} />}
+      {historyOpen && <HistoryFlyout onClose={handleHistoryClose} />}
 
       {/* Divider */}
       <div className="w-8 h-px bg-gray-800 my-1" aria-hidden />

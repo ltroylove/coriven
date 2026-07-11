@@ -92,6 +92,16 @@ function makeToolPermissionsClient(
           }),
         }
       }
+      if (table === 'conversations') {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              is: vi.fn().mockResolvedValue({ error: null }),
+            }),
+          }),
+        }
+      }
       if (table === 'conversation_messages') {
         return {
           insert: vi.fn().mockResolvedValue({ error: null }),
@@ -318,13 +328,23 @@ describe('Task 7.4.1.2.1 — Multi-store tool calls within a single turn', () =>
       { tool_name: 'recall_memories', enabled: true },
     ]
 
-    // Supabase client needs to handle tool_permissions, conversation_messages, tasks, goals, memories
+    // Supabase client needs to handle tool_permissions, conversations, conversation_messages, tasks, goals, memories
     const mockDb = {
       from: vi.fn((table: string) => {
         if (table === 'tool_permissions') {
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockResolvedValue({ data: permissions, error: null }),
+            }),
+          }
+        }
+        if (table === 'conversations') {
+          return {
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ error: null }),
+              }),
             }),
           }
         }
@@ -447,6 +467,16 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockResolvedValue({ data: permissions, error: null }),
+            }),
+          }
+        }
+        if (table === 'conversations') {
+          return {
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ error: null }),
+              }),
             }),
           }
         }
@@ -588,6 +618,16 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockResolvedValue({ data: permissions, error: null }),
+            }),
+          }
+        }
+        if (table === 'conversations') {
+          return {
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ error: null }),
+              }),
             }),
           }
         }

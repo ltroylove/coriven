@@ -33,6 +33,7 @@ vi.mock('lucide-react', () => ({
 }))
 
 import { ChatPane } from '../chat-pane'
+import { ConversationProvider } from '@/components/providers/conversation-provider'
 import { getChatHistory } from '@/app/actions/chat'
 import type { ChatMessage } from '../types'
 
@@ -86,7 +87,7 @@ describe('ChatPane — history load', () => {
     const messages = makeThreeMessages()
     mockGetChatHistory.mockResolvedValue(messages)
 
-    render(<ChatPane conversationId="conv-test-123" />)
+    render(<ConversationProvider><ChatPane conversationId="conv-test-123" /></ConversationProvider>)
 
     // Messages appear after the promise resolves.
     await waitFor(() => {
@@ -101,7 +102,7 @@ describe('ChatPane — history load', () => {
   it('shows the empty-state prompt when getChatHistory returns an empty array', async () => {
     mockGetChatHistory.mockResolvedValue([])
 
-    render(<ChatPane conversationId="conv-empty-456" />)
+    render(<ConversationProvider><ChatPane conversationId="conv-empty-456" /></ConversationProvider>)
 
     await waitFor(() => {
       expect(
@@ -119,7 +120,7 @@ describe('ChatPane — history load', () => {
     })
     mockGetChatHistory.mockReturnValue(deferred)
 
-    render(<ChatPane conversationId="conv-loading-789" />)
+    render(<ConversationProvider><ChatPane conversationId="conv-loading-789" /></ConversationProvider>)
 
     // Loading indicator must be visible immediately (before resolution).
     expect(screen.getByRole('status')).toBeInTheDocument()
@@ -138,7 +139,7 @@ describe('ChatPane — history load', () => {
   it('has an aria-live="polite" region on the message container', () => {
     mockGetChatHistory.mockResolvedValue([])
 
-    render(<ChatPane conversationId="conv-aria-000" />)
+    render(<ConversationProvider><ChatPane conversationId="conv-aria-000" /></ConversationProvider>)
 
     const liveRegion = screen.getByLabelText('Conversation messages')
     expect(liveRegion).toHaveAttribute('aria-live', 'polite')
@@ -157,7 +158,7 @@ describe('ChatPane — tool-use blocks in history', () => {
     })
     mockGetChatHistory.mockResolvedValue([toolMessage])
 
-    render(<ChatPane conversationId="conv-tool-111" />)
+    render(<ConversationProvider><ChatPane conversationId="conv-tool-111" /></ConversationProvider>)
 
     // Tool name appears in the ToolCallCard button label.
     await waitFor(() => {
