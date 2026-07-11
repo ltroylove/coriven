@@ -3,6 +3,8 @@
 import { useTransition } from 'react'
 import { CheckCircle, Circle, Trash2, Clock, Bell, Repeat, BellOff } from 'lucide-react'
 import { updateTask, deleteTask, snoozeReminder, deleteReminder } from '@/app/actions/tasks'
+import { useTimezone } from '@/components/providers/timezone-provider'
+import { formatInTimezone } from '@/lib/utils/timezone'
 import type { Task, TaskReminder } from '@personal-assistant/types'
 
 const priorityColors = {
@@ -27,16 +29,16 @@ const recurrenceLabels: Record<string, string> = {
   yearly: 'Yearly',
 }
 
-function formatRemindAt(isoString: string): string {
+function formatRemindAt(isoString: string, timezone: string): string {
   const d = new Date(isoString)
   const diffMins = Math.round((d.getTime() - Date.now()) / 60000)
   if (diffMins < 0) return `overdue ${Math.abs(diffMins)}m ago`
   if (diffMins < 60) return `in ${diffMins}m`
   if (diffMins < 1440) return `in ${Math.round(diffMins / 60)}h`
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return formatInTimezone(isoString, timezone, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function ReminderRow({ reminder, isDone }: { reminder: TaskReminder; isDone: boolean }) {
+function ReminderRow({ reminder, isDone, timezone }: { reminder: TaskReminder; isDone: boolean; timezone: string }) {
   const [isPending, startTransition] = useTransition()
   const isSnoozed = reminder.snoozed_until && new Date(reminder.snoozed_until) > new Date()
 
@@ -52,7 +54,7 @@ function ReminderRow({ reminder, isDone }: { reminder: TaskReminder; isDone: boo
     <div className={`flex flex-wrap items-center gap-2 mt-1.5 ${isPending ? 'opacity-50' : ''}`} onClick={e => e.stopPropagation()}>
       <span className={`flex items-center gap-1 text-xs ${isSnoozed ? 'text-gray-500' : 'text-amber-400/80'}`}>
         {isSnoozed ? <BellOff className="w-3 h-3" /> : <Bell className="w-3 h-3" />}
-        {isSnoozed ? 'snoozed' : formatRemindAt(reminder.remind_at)}
+        {isSnoozed ? 'snoozed' : formatRemindAt(reminder.remind_at, timezone)}
       </span>
       {reminder.recurrence_type !== 'none' && (
         <span className="flex items-center gap-1 text-xs text-purple-400/80">
@@ -86,6 +88,7 @@ function ReminderRow({ reminder, isDone }: { reminder: TaskReminder; isDone: boo
 
 export function TaskCard({ task, onEdit }: { task: Task; onEdit: (task: Task) => void }) {
   const [isPending, startTransition] = useTransition()
+  const timezone = useTimezone()
   const isDone = task.status === 'done'
   const reminders = task.reminders ?? []
 
@@ -123,12 +126,12 @@ export function TaskCard({ task, onEdit }: { task: Task; onEdit: (task: Task) =>
           {task.due_at && (
             <span className="flex items-center gap-1 text-xs text-gray-500">
               <Clock className="w-3 h-3" />
-              {new Date(task.due_at).toLocaleDateString()}
+              {formatInTimezone(task.due_at, timezone, { month: 'short', day: 'numeric' })}
             </span>
           )}
         </div>
         {reminders.map(r => (
-          <ReminderRow key={r.id} reminder={r} isDone={isDone} />
+          <ReminderRow key={r.id} reminder={r} isDone={isDone} timezone={timezone} />
         ))}
       </div>
 

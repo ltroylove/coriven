@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { BriefingSection } from '@/components/briefing/briefing-section'
 import { WeeklyReviewSection } from '@/components/briefing/weekly-review-section'
+import { formatInTimezone } from '@/lib/utils/timezone'
 import type { BriefingContent } from '@/lib/jobs/briefing'
 import type { MeetingBriefContent } from '@/lib/jobs/meeting-prep'
 import type { WeeklyReviewContent } from '@personal-assistant/types'
@@ -20,7 +21,7 @@ interface MeetingBriefRow {
   content: unknown
 }
 
-function MeetingPrepSection({ briefs }: { briefs: MeetingBriefRow[] }) {
+function MeetingPrepSection({ briefs, timezone }: { briefs: MeetingBriefRow[]; timezone: string }) {
   if (briefs.length === 0) return null
 
   return (
@@ -31,7 +32,7 @@ function MeetingPrepSection({ briefs }: { briefs: MeetingBriefRow[] }) {
       <ul className="space-y-4">
         {briefs.map((brief) => {
           const briefContent = brief.content as MeetingBriefContent
-          const startTime = new Date(brief.event_start).toLocaleTimeString('en-US', {
+          const startTime = formatInTimezone(brief.event_start, timezone, {
             hour: 'numeric',
             minute: '2-digit',
           })
@@ -198,7 +199,7 @@ export default async function TodayPage() {
             />
           </div>
         )}
-        <MeetingPrepSection briefs={meetingBriefs ?? []} />
+        <MeetingPrepSection briefs={meetingBriefs ?? []} timezone={timezone} />
       </div>
     )
   }
@@ -222,8 +223,7 @@ export default async function TodayPage() {
   ))
 
   const upcomingItems = content.upcoming.map((task) => {
-    const due = new Date(task.dueAt)
-    const formatted = due.toLocaleDateString('en-US', {
+    const formatted = formatInTimezone(task.dueAt, timezone, {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
@@ -316,7 +316,7 @@ export default async function TodayPage() {
       {/* Meeting prep — only rendered when briefs exist */}
       {(meetingBriefs ?? []).length > 0 && (
         <div className="mt-8">
-          <MeetingPrepSection briefs={meetingBriefs ?? []} />
+          <MeetingPrepSection briefs={meetingBriefs ?? []} timezone={timezone} />
         </div>
       )}
     </div>

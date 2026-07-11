@@ -13,6 +13,8 @@
 
 import { useState } from 'react'
 import { retryAction } from '@/app/actions/approvals'
+import { useTimezone } from '@/components/providers/timezone-provider'
+import { formatInTimezone } from '@/lib/utils/timezone'
 
 const STATUS_COLORS: Record<string, string> = {
   approved: 'text-emerald-400',
@@ -47,6 +49,7 @@ export function HistoryRow({
   }
 }) {
   const [retrying, setRetrying] = useState(false)
+  const timezone = useTimezone()
   const [retryError, setRetryError] = useState<string | null>(null)
 
   async function handleRetry() {
@@ -80,9 +83,9 @@ export function HistoryRow({
           </div>
 
           <p className="text-xs text-gray-600 mt-1">
-            Created {new Date(item.created_at).toLocaleString()}
-            {item.reviewed_at && ` · Reviewed ${new Date(item.reviewed_at).toLocaleString()}`}
-            {item.executed_at && ` · Executed ${new Date(item.executed_at).toLocaleString()}`}
+            Created {formatInTimezone(item.created_at, timezone, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            {item.reviewed_at && ` · Reviewed ${formatInTimezone(item.reviewed_at, timezone, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+            {item.executed_at && ` · Executed ${formatInTimezone(item.executed_at, timezone, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
           </p>
 
           {/* Failure reason */}
