@@ -1,12 +1,37 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
+import { AuthedShell } from '@/components/layout/authed-shell'
+import { OverviewPanel } from '@/components/overview/overview-panel'
 import s from './landing.module.css'
 
+/**
+ * Root page — branches on auth:
+ *   - Signed-out: existing landing page (unchanged)
+ *   - Signed-in:  app shell at `/` (C5 canonical home — chat + overview panel)
+ *
+ * NOTE: This page is OUTSIDE the (app) route group, so it does NOT inherit
+ * (app)/layout.tsx's providers. We compose the same provider stack via AuthedShell.
+ * The signed-in redirect to /tasks has been removed — / is now the home.
+ */
 export default async function Home() {
   const db = await createAuthServerClient()
   const { data: { user } } = await db.auth.getUser()
-  if (user) redirect('/tasks')
+
+  if (user) {
+    const { data: profile } = await db
+      .from('profiles')
+      .select('timezone')
+      .eq('id', user.id)
+      .single()
+
+    const timezone = profile?.timezone ?? 'America/Chicago'
+
+    return (
+      <AuthedShell userEmail={user.email ?? ''} timezone={timezone}>
+        <OverviewPanel />
+      </AuthedShell>
+    )
+  }
 
   return (
     <div className={s.root}>

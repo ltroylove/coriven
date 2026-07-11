@@ -8,6 +8,62 @@ import { executeApprovedAction } from '@/lib/approvals/executors/router'
 import type { ApprovalActionType, ApprovalProvider } from '@personal-assistant/types'
 import type { Json } from '@/types/supabase'
 
+/**
+ * Fetch a single approval_queue row by id, scoped to the authenticated user.
+ *
+ * Used by the inline approval card to refresh status when a conversation is
+ * reloaded from history. RLS ensures a row belonging to a different user is
+ * invisible; Supabase returns no row (null data) in that case, which is
+ * treated identically to a missing row — the caller gets { error }.
+ *
+ * No caching: the card needs the current DB status every time.
+ */
+export async function getApproval(id: string): Promise<
+  | {
+      id: string
+      action_type: string
+      provider: string
+      payload: import('@/types/supabase').Json
+      ai_summary: string | null
+      status: string
+      created_at: string
+    }
+  | { error: string }
+> {
+  try {
+    const { supabase } = await getAuthenticatedUser()
+
+    const { data, error } = await supabase
+      .from('approval_queue')
+      .select('id, action_type, provider, payload, ai_summary, status, created_at')
+      .eq('id', id)
+      .single()
+
+    if (error || !data) {
+      return { error: 'Approval not found or access denied' }
+    }
+
+    return {
+      id: data.id,
+      action_type: data.action_type,
+      provider: data.provider,
+      payload: data.payload,
+      ai_summary: data.ai_summary,
+      status: data.status,
+      created_at: data.created_at,
+    }
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: 'approvals.getApproval.unexpected_error',
+        id,
+        error: String(err),
+      }),
+    )
+    return { error: 'An unexpected error occurred. Please try again.' }
+  }
+}
+
 async function getAuthenticatedUser() {
   const supabase = await createAuthServerClient()
   const {

@@ -1,8 +1,11 @@
+// FLAGGED BOUNDED EDIT (Wave 9.1.3 task 9.1.3.1.1):
+// Replaced inline provider stack with the shared AuthedShell composition so that
+// the root page.tsx (outside this route group) can use the same stack without
+// duplication. Behavior is identical; no providers added or removed.
+
 import { redirect } from 'next/navigation'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
-import { TimezoneProvider } from '@/components/providers/timezone-provider'
-import { PanelProvider } from '@/components/providers/panel-provider'
-import { AppShell } from '@/components/layout/app-shell'
+import { AuthedShell } from '@/components/layout/authed-shell'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createAuthServerClient()
@@ -19,14 +22,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const timezone = profile?.timezone ?? 'America/Chicago'
 
   return (
-    <TimezoneProvider timezone={timezone}>
-      <PanelProvider>
-        <div className="h-screen flex bg-gray-950 text-white overflow-hidden">
-          <AppShell userEmail={user.email ?? ''}>
-            <div className="h-full overflow-auto p-6">{children}</div>
-          </AppShell>
-        </div>
-      </PanelProvider>
-    </TimezoneProvider>
+    <AuthedShell userEmail={user.email ?? ''} timezone={timezone}>
+      {children}
+    </AuthedShell>
   )
 }

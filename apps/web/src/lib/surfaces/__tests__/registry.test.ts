@@ -47,18 +47,27 @@ describe('SURFACE_REGISTRY', () => {
     expect(SURFACE_MAP.activity.tools).toContain('submit_for_approval')
     expect(SURFACE_MAP.settings.tools).toHaveLength(0)
   })
+
+  it('overview matchPrefixes contains only / (no /today interim alias)', () => {
+    expect(SURFACE_MAP.overview.matchPrefixes).toEqual(['/'])
+  })
+
+  it('settings matchPrefixes contains only /settings (no /memory or /constraints aliases)', () => {
+    expect(SURFACE_MAP.settings.matchPrefixes).toEqual(['/settings'])
+  })
+
+  it('activity matchPrefixes contains only /activity (no /approvals alias)', () => {
+    expect(SURFACE_MAP.activity.matchPrefixes).toEqual(['/activity'])
+  })
 })
 
 // ---------------------------------------------------------------------------
-// surfaceForPathname
+// surfaceForPathname — final C5 route map (Wave 9.1.3)
 // ---------------------------------------------------------------------------
 describe('surfaceForPathname', () => {
   // --- overview ---
   it('/ → overview', () => {
     expect(surfaceForPathname('/')).toBe('overview')
-  })
-  it('/today → overview (interim C5 mapping)', () => {
-    expect(surfaceForPathname('/today')).toBe('overview')
   })
 
   // --- tasks ---
@@ -91,31 +100,40 @@ describe('surfaceForPathname', () => {
     expect(surfaceForPathname('/email/thread-7')).toBe('email')
   })
 
-  // --- settings (+ interim routes) ---
+  // --- settings (including sub-routes) ---
   it('/settings → settings', () => {
     expect(surfaceForPathname('/settings')).toBe('settings')
   })
-  it('/memory → settings (interim until 9.1.3)', () => {
-    expect(surfaceForPathname('/memory')).toBe('settings')
+  it('/settings/memory → settings', () => {
+    expect(surfaceForPathname('/settings/memory')).toBe('settings')
   })
-  it('/constraints → settings (interim until 9.1.3)', () => {
-    expect(surfaceForPathname('/constraints')).toBe('settings')
+  it('/settings/constraints → settings', () => {
+    expect(surfaceForPathname('/settings/constraints')).toBe('settings')
+  })
+  it('/settings/integrations → settings', () => {
+    expect(surfaceForPathname('/settings/integrations')).toBe('settings')
   })
 
-  // --- activity (+ interim routes) ---
+  // --- activity ---
   it('/activity → activity', () => {
     expect(surfaceForPathname('/activity')).toBe('activity')
   })
-  it('/approvals → activity (interim until 9.1.3)', () => {
-    expect(surfaceForPathname('/approvals')).toBe('activity')
-  })
 
-  // --- null cases ---
-  it('/chat → null (panel closed, full-width chat)', () => {
+  // --- null cases (retired routes redirect via next.config.ts) ---
+  it('/chat → null (retired; redirects to /)', () => {
     expect(surfaceForPathname('/chat')).toBeNull()
   })
-  it('/chat/room-id → null', () => {
-    expect(surfaceForPathname('/chat/room-id')).toBeNull()
+  it('/today → null (retired; redirects to /)', () => {
+    expect(surfaceForPathname('/today')).toBeNull()
+  })
+  it('/approvals → null (retired; redirects to /activity)', () => {
+    expect(surfaceForPathname('/approvals')).toBeNull()
+  })
+  it('/memory → null (retired; redirects to /settings/memory)', () => {
+    expect(surfaceForPathname('/memory')).toBeNull()
+  })
+  it('/constraints → null (retired; redirects to /settings/constraints)', () => {
+    expect(surfaceForPathname('/constraints')).toBeNull()
   })
   it('/unknown-route → null', () => {
     expect(surfaceForPathname('/unknown-route')).toBeNull()

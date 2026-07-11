@@ -49,7 +49,7 @@ export const SURFACE_REGISTRY: SurfaceEntry[] = [
     surface: 'overview',
     rail: true,
     route: '/',
-    matchPrefixes: ['/', '/today'],
+    matchPrefixes: ['/'],
     icon: LayoutDashboard,
     label: 'Overview',
     tools: ['generate_daily_briefing', 'generate_weekly_review'],
@@ -85,7 +85,7 @@ export const SURFACE_REGISTRY: SurfaceEntry[] = [
     surface: 'settings',
     rail: true,
     route: '/settings',
-    matchPrefixes: ['/settings', '/memory', '/constraints'],
+    matchPrefixes: ['/settings'],
     icon: Settings,
     label: 'Settings',
     tools: [],
@@ -94,7 +94,7 @@ export const SURFACE_REGISTRY: SurfaceEntry[] = [
     surface: 'activity',
     rail: false,
     route: '/activity',
-    matchPrefixes: ['/activity', '/approvals'],
+    matchPrefixes: ['/activity'],
     icon: Activity,
     label: 'Activity',
     tools: ['submit_for_approval'],
@@ -110,30 +110,27 @@ export const SURFACE_MAP: Record<SurfaceId, SurfaceEntry> = Object.fromEntries(
 // surfaceForPathname
 //
 // Returns the SurfaceId that owns a given pathname, or null when no surface
-// owns it (e.g. `/chat` renders panel-closed, full-width chat).
+// owns it.
 //
-// Rules (interim mappings per C2 + C5):
-//   /            → overview
-//   /today       → overview  (C5: will 301 in wave 9.1.3)
-//   /tasks       → tasks
-//   /tasks/[id]  → tasks
-//   /goals       → goals
-//   /goals/[id]  → goals
-//   /projects    → goals     (legacy alias, C5 Finding 5)
-//   /projects/[id] → goals
-//   /email       → email
-//   /email/[id]  → email
-//   /settings    → settings
-//   /memory      → settings  (interim until 9.1.3 folds into /settings)
-//   /constraints → settings  (interim)
-//   /activity    → activity
-//   /approvals   → activity  (interim until 9.1.3)
-//   /chat        → null      (panel closed, full-width chat)
+// Final C5 route map (Wave 9.1.3 — all interim aliases removed):
+//   /                → overview
+//   /tasks           → tasks
+//   /tasks/[id]      → tasks
+//   /goals           → goals
+//   /goals/[id]      → goals
+//   /projects        → goals  (legacy alias, C5 Finding 5)
+//   /projects/[id]   → goals
+//   /email           → email
+//   /email/[id]      → email
+//   /settings        → settings
+//   /settings/*      → settings
+//   /activity        → activity
+//   everything else  → null
+//
+// Retired routes (/chat, /today, /approvals, /memory, /constraints) issue
+// permanent redirects in next.config.ts and never reach this function.
 // ---------------------------------------------------------------------------
 export function surfaceForPathname(pathname: string): SurfaceId | null {
-  // Explicit null for /chat (legacy route; panel closed)
-  if (pathname === '/chat' || pathname.startsWith('/chat/')) return null
-
   // Walk the registry and check each entry's matchPrefixes
   for (const entry of SURFACE_REGISTRY) {
     for (const prefix of entry.matchPrefixes) {
