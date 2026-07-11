@@ -1,4 +1,23 @@
 /**
+ * Format an ISO timestamp in a specific IANA timezone.
+ * Wraps Intl.DateTimeFormat so callers never need to handle the timezone option themselves.
+ */
+export function formatInTimezone(
+  isoString: string,
+  timezone: string,
+  options: Omit<Intl.DateTimeFormatOptions, 'timeZone'> = {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  },
+): string {
+  return new Intl.DateTimeFormat('en-US', { ...options, timeZone: timezone }).format(
+    new Date(isoString),
+  )
+}
+
+/**
  * Returns true if `now` falls within `windowMinutes` of the user's configured
  * briefing time in their local timezone.
  */

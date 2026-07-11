@@ -1,5 +1,8 @@
 'use client'
 
+import { useTimezone } from '@/components/providers/timezone-provider'
+import { formatInTimezone } from '@/lib/utils/timezone'
+
 /**
  * ApprovalCard — displays a pending approval item.
  *
@@ -15,6 +18,7 @@
 
 import { useState } from 'react'
 import { approveAction, cancelAction, approveWithModifiedPayload } from '@/app/actions/approvals'
+
 
 type Mode = 'view' | 'edit'
 
@@ -38,6 +42,7 @@ export function ApprovalCard({
   const [parseError, setParseError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const timezone = useTimezone()
 
   function handleEditChange(value: string) {
     setEditedPayload(value)
@@ -103,7 +108,7 @@ export function ApprovalCard({
         </span>
         <span className="text-xs text-gray-500">{item.provider}</span>
         <span className="ml-auto text-xs text-gray-600">
-          {new Date(item.created_at).toLocaleString()}
+          {formatInTimezone(item.created_at, timezone)}
         </span>
       </div>
 
