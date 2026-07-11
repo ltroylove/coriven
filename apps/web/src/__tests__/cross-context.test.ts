@@ -331,6 +331,16 @@ describe('Task 7.4.1.2.1 — Multi-store tool calls within a single turn', () =>
         if (table === 'conversation_messages') {
           return { insert: vi.fn().mockResolvedValue({ error: null }) }
         }
+        if (table === 'profiles') {
+          // sentinel_mode read: .select('sentinel_mode').eq('id', userId).single()
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                single: vi.fn().mockResolvedValue({ data: { sentinel_mode: 'async' }, error: null }),
+              }),
+            }),
+          }
+        }
         if (table === 'tasks') {
           const data = [{ id: 'task-1', title: 'Buy gym equipment', status: 'pending', priority: 'high', reminders: [] }]
           return {
@@ -442,6 +452,16 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
         }
         if (table === 'conversation_messages') {
           return { insert: vi.fn().mockResolvedValue({ error: null }) }
+        }
+        if (table === 'profiles') {
+          // sentinel_mode read: .select('sentinel_mode').eq('id', userId).single()
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                single: vi.fn().mockResolvedValue({ data: { sentinel_mode: 'async' }, error: null }),
+              }),
+            }),
+          }
         }
         // All data tables return empty
         return {
@@ -573,6 +593,16 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
         }
         if (table === 'conversation_messages') {
           return { insert: vi.fn().mockResolvedValue({ error: null }) }
+        }
+        if (table === 'profiles') {
+          // sentinel_mode read: .select('sentinel_mode').eq('id', userId).single()
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                single: vi.fn().mockResolvedValue({ data: { sentinel_mode: 'async' }, error: null }),
+              }),
+            }),
+          }
         }
         if (table === 'tasks') {
           // Tasks returns data
