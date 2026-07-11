@@ -81,3 +81,35 @@ export async function updateBriefingSettings(
   revalidatePath('/settings')
   return { success: true }
 }
+
+// ---------------------------------------------------------------------------
+// updateSentinelMode Server Action
+// ---------------------------------------------------------------------------
+
+export async function updateSentinelMode(
+  mode: 'async' | 'sync',
+): Promise<{ success: boolean; error?: string }> {
+  if (mode !== 'async' && mode !== 'sync') {
+    return { success: false, error: 'Invalid mode.' }
+  }
+
+  const supabase = await createAuthServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { success: false, error: 'Unauthorized.' }
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ sentinel_mode: mode })
+    .eq('id', user.id)
+
+  if (error) {
+    console.error('[profile] updateSentinelMode failed', error)
+    return { success: false, error: 'Failed to save settings.' }
+  }
+
+  revalidatePath('/settings')
+  return { success: true }
+}

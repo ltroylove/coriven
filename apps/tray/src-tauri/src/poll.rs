@@ -23,6 +23,7 @@ use crate::{
     briefing::{BriefingSessionGuard, run_briefing_poll},
     notify::{dispatch_notification, NotificationMeta},
     offline::{DueCache, SnoozeResult, post_snooze},
+    patterns::run_patterns_poll,
 };
 
 // ---------------------------------------------------------------------------
@@ -438,9 +439,15 @@ async fn run_poll_cycle(app: &AppHandle, poll_state: &Arc<Mutex<PollState>>) {
 
         // Run approvals channel (same lock-free-across-await pattern).
         run_approvals_poll_with_state(app, poll_state, &token).await;
+
+        // Wave 7.1.1: Run patterns channel.
+        // Errors are fully isolated — a pattern poll failure never affects the
+        // reminder, briefing, or approval channels. run_patterns_poll handles its
+        // own error logging and never panics.
+        run_patterns_poll(app, &token, &api_base_url).await;
     } else {
         eprintln!(
-            "[coriven-tray] poll: offline — skipping briefing and approval channels (no cacheable state)"
+            "[coriven-tray] poll: offline — skipping briefing, approval, and patterns channels (no cacheable state)"
         );
     }
 }

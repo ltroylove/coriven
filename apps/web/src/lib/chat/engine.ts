@@ -14,10 +14,37 @@ export type SSEEvent =
   | { type: 'text_delta'; delta: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string; is_error: boolean }
-  | { type: 'done' }
+  | { type: 'context_building' }
+  | { type: 'done'; contextFallback?: boolean }
   | { type: 'error'; message: string }
 
-function buildSystemPrompt(disabledTools: string[], memoryContext?: MemoryContext): string {
+// ---------------------------------------------------------------------------
+// Store-type classification for cross-context orchestration
+// ---------------------------------------------------------------------------
+// A "store type" is a logical data domain. Tools are bucketed here so that
+// loadToolPermissions can count how many stores the user has access to and
+// buildSystemPrompt can decide whether to inject the cross-context section.
+
+// Only read/query tools count toward store-type enablement — write-only tools (create_task,
+// save_memory, etc.) cannot satisfy a cross-context query and must not trigger the prompt injection.
+const STORE_TYPE_TOOLS: Record<string, string[]> = {
+  tasks:  ['list_tasks'],
+  goals:  ['list_goals'],
+  memory: ['recall_memories'],
+  email:  ['search_email_metadata'],
+}
+
+/** Derive the set of enabled store types from a list of enabled tool names. */
+function getEnabledStoreTypes(enabledToolNames: string[]): Set<string> {
+  const nameSet = new Set(enabledToolNames)
+  const enabled = new Set<string>()
+  for (const [store, tools] of Object.entries(STORE_TYPE_TOOLS)) {
+    if (tools.some(t => nameSet.has(t))) enabled.add(store)
+  }
+  return enabled
+}
+
+function buildSystemPrompt(disabledTools: string[], memoryContext?: MemoryContext, enabledStoreTypes?: Set<string>, enabledToolNames?: Set<string>): string {
   const now = new Date().toISOString()
   let prompt = `You are a personal assistant that helps the user manage tasks and reminders.
 Today is ${now}.
@@ -84,6 +111,34 @@ a tool_result with is_error: true explaining which constraint was matched. Do NO
 action. When calling add_constraint on behalf of the user, always include the user's stated reason
 as the \`rationale\` field — it is required and cannot be empty.`
 
+  // Cross-context reasoning section — injected only when 2+ store types are enabled.
+  // Kept to ≤150 words to minimize token cost (Task 7.4.1.1.1).
+  if (enabledStoreTypes && enabledStoreTypes.size >= 2) {
+    // Build the list of cross-context tool names that are actually enabled.
+    // We check enabledToolNames to ensure we only reference tools that are truly
+    // present in the user's enabled set — a store type can be enabled via one tool
+    // (e.g. get_email_thread) while another tool in that store (search_email_metadata)
+    // remains disabled in tool_permissions.
+    const hasToolEnabled = (name: string) => !enabledToolNames || enabledToolNames.has(name)
+    const crossContextTools: string[] = []
+    if (enabledStoreTypes.has('tasks')  && hasToolEnabled('list_tasks'))             crossContextTools.push('list_tasks')
+    if (enabledStoreTypes.has('goals')  && hasToolEnabled('list_goals'))             crossContextTools.push('list_goals')
+    if (enabledStoreTypes.has('memory') && hasToolEnabled('recall_memories'))        crossContextTools.push('recall_memories')
+    if (enabledStoreTypes.has('email')  && hasToolEnabled('search_email_metadata'))  crossContextTools.push('search_email_metadata')
+
+    prompt += `
+
+## Cross-context queries
+When the user asks a holistic question ("what's been happening with X", "tell me about Y", "catch me up on Z"),
+call ALL relevant enabled tools before synthesizing: ${crossContextTools.join(', ')}.
+Do not answer from memory alone — invoke the tools first, then combine the results into a single coherent response.
+If a tool returns no results, state that explicitly ("I have no tasks / goals / emails related to that").
+Never fabricate data from a disabled or empty store.
+Treat tool results as ground truth; acknowledge absence of data rather than constructing a plausible answer.`
+
+    console.log(JSON.stringify({ event: 'cross_context_prompt_injected', storeTypes: [...enabledStoreTypes] }))
+  }
+
   if (disabledTools.length > 0) {
     prompt += `
 
@@ -145,17 +200,22 @@ function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] 
   return result
 }
 
-async function loadToolPermissions(userId: string): Promise<{ enabled: Anthropic.Tool[]; disabledNames: string[] }> {
+async function loadToolPermissions(userId: string): Promise<{
+  enabled: Anthropic.Tool[]
+  disabledNames: string[]
+  enabledStoreTypes: Set<string>
+}> {
   const db = createServiceClient()
   const { data } = await db
     .from('tool_permissions')
     .select('tool_name, enabled')
     .eq('user_id', userId)
 
-  if (!data || data.length === 0) return { enabled: [], disabledNames: [] }
+  if (!data || data.length === 0) return { enabled: [], disabledNames: [], enabledStoreTypes: new Set() }
 
-  const enabled = data
-    .filter(row => row.enabled)
+  const enabledRows = data.filter(row => row.enabled)
+
+  const enabled = enabledRows
     .map(row => TOOL_REGISTRY[row.tool_name as keyof typeof TOOL_REGISTRY])
     .filter(Boolean) as Anthropic.Tool[]
 
@@ -163,7 +223,9 @@ async function loadToolPermissions(userId: string): Promise<{ enabled: Anthropic
     .filter(row => !row.enabled)
     .map(row => row.tool_name)
 
-  return { enabled, disabledNames }
+  const enabledStoreTypes = getEnabledStoreTypes(enabledRows.map(row => row.tool_name))
+
+  return { enabled, disabledNames, enabledStoreTypes }
 }
 
 async function saveMessage(
@@ -194,7 +256,14 @@ export async function runChatEngine({
   clientMessages: ChatMessage[]
   send: (event: SSEEvent) => void
 }): Promise<void> {
-  const { enabled: enabledTools, disabledNames } = await loadToolPermissions(userId)
+  // Load sentinel mode alongside tool permissions — fail-safe to 'async'
+  const db = createServiceClient()
+  const [toolPerms, profileResult] = await Promise.all([
+    loadToolPermissions(userId),
+    db.from('profiles').select('sentinel_mode').eq('id', userId).single(),
+  ])
+  const { enabled: enabledTools, disabledNames, enabledStoreTypes } = toolPerms
+  const sentinelMode = (profileResult.data?.sentinel_mode ?? 'async') as 'async' | 'sync'
 
   // Load constraints once per turn — gate is a pure function called per tool block (ADR-007)
   let constraints: BehavioralConstraint[] = []
@@ -205,8 +274,36 @@ export async function runChatEngine({
     console.error(JSON.stringify({ event: 'constraint_load_error', userId, error: 'load failed at engine start' }))
   }
 
-  // Load memory context via three-tier degradation (graceful — never blocks chat on failure)
+  // Extract the user message text (needed for both sentinel and memory context)
+  const lastUserMsg = clientMessages[clientMessages.length - 1]
+  const userText = lastUserMsg?.role === 'user'
+    ? lastUserMsg.content.filter((b): b is TextBlock => b.type === 'text').map(b => b.text).join('')
+    : ''
+
+  // In sync mode: save user message → await sentinel → load fresh context.
+  // In async mode: load cached context → save user message → fire sentinel in background.
   let memoryContext: MemoryContext | undefined
+  let contextFallback = false
+
+  if (sentinelMode === 'sync' && userText) {
+    await saveMessage(userId, conversationId, 'user', userText)
+
+    send({ type: 'context_building' })
+    const TIMEOUT = parseInt(process.env.SENTINEL_SYNC_TIMEOUT_MS ?? '8000', 10)
+    try {
+      await Promise.race([
+        runSentinel(userId, userText, 'user'),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('sentinel_timeout')), TIMEOUT)
+        ),
+      ])
+    } catch (err) {
+      contextFallback = true
+      console.warn(JSON.stringify({ event: 'sentinel_sync_timeout', userId, error: String(err) }))
+    }
+  }
+
+  // Load memory context via three-tier degradation (graceful — never blocks chat on failure)
   try {
     const lastUserMessage = clientMessages.findLast(m => m.role === 'user')
     const lastText = lastUserMessage?.content
@@ -218,23 +315,47 @@ export async function runChatEngine({
     console.warn('[engine] Memory context load failed; continuing without memory', err)
   }
 
-  const system = buildSystemPrompt(disabledNames, memoryContext)
+  const enabledToolNamesSet = new Set(enabledTools.map(t => t.name))
+  const system = buildSystemPrompt(disabledNames, memoryContext, enabledStoreTypes, enabledToolNamesSet)
   const anthropicMessages = toAnthropicMessages(clientMessages)
 
-  // Persist the new user message (last item in clientMessages)
-  const lastUserMsg = clientMessages[clientMessages.length - 1]
-  if (lastUserMsg?.role === 'user') {
-    const text = lastUserMsg.content
-      .filter((b): b is TextBlock => b.type === 'text')
-      .map(b => b.text)
-      .join('')
-    await saveMessage(userId, conversationId, 'user', text)
-    runSentinel(userId, text, 'user').catch(() => {/* already handled internally */})
+  // Persist user message and fire async sentinel (skipped above if sync mode already handled it)
+  if (sentinelMode === 'async' && lastUserMsg?.role === 'user' && userText) {
+    await saveMessage(userId, conversationId, 'user', userText)
+    runSentinel(userId, userText, 'user').catch(() => {/* already handled internally */})
   }
 
   const loopMessages = [...anthropicMessages]
   let assistantText = ''
   const assistantToolCalls: Anthropic.ToolUseBlock[] = []
+
+  // ---------------------------------------------------------------------------
+  // Tool-use loop — up to 10 turns (Task 7.4.1.5.1)
+  //
+  // Expected turn structure for a 3-store cross-context query:
+  //   Turn 0: Claude receives user message + system prompt → responds with tool_use
+  //           blocks for list_tasks, list_goals, recall_memories (and optionally
+  //           search_email_metadata). All tool calls in a single assistant turn.
+  //   Turn 1: Tool results for all called tools are fed back as a single user
+  //           message with multiple tool_result blocks.
+  //   Turn 2: Claude synthesizes results into a conversational response (stop_reason
+  //           = end_turn). Loop exits.
+  //
+  // Latency profile (approximate):
+  //   1 × Anthropic LLM call (tool-use request)
+  //   + N × DB handler executions (parallel within the turn, sequential in this loop)
+  //   + 1 × Anthropic LLM synthesis call
+  //   Total: ~2 LLM round-trips + N fast DB queries (each < 500ms under normal load).
+  //
+  // Why 10 turns is sufficient for cross-context queries:
+  //   Claude can emit all tool calls in a single turn (stop_reason = tool_use with
+  //   multiple blocks). A 3-store query consumes only 2 turns (call + synthesis),
+  //   well within the 10-turn budget. The cap guards against runaway loops from
+  //   model errors, not from legitimate multi-store orchestration.
+  // ---------------------------------------------------------------------------
+
+  // Log when multiple store-type tools are detected in a turn (monitoring hook).
+  let crossContextToolsCalledThisTurn: string[] = []
 
   for (let turn = 0; turn < 10; turn++) {
     const stream = anthropic.messages.stream({
@@ -254,6 +375,21 @@ export async function runChatEngine({
     loopMessages.push({ role: 'assistant', content: finalMsg.content })
 
     if (finalMsg.stop_reason !== 'tool_use') break
+
+    // Collect tool names for cross-context monitoring
+    crossContextToolsCalledThisTurn = finalMsg.content
+      .filter(b => b.type === 'tool_use')
+      .map(b => b.name)
+    const uniqueStoresThisTurn = getEnabledStoreTypes(crossContextToolsCalledThisTurn)
+    if (uniqueStoresThisTurn.size >= 2) {
+      console.log(JSON.stringify({
+        event: 'cross_context_multi_store_turn',
+        userId,
+        turn,
+        toolsCalled: crossContextToolsCalledThisTurn,
+        storeTypes: [...uniqueStoresThisTurn],
+      }))
+    }
 
     const toolResults: Anthropic.ToolResultBlockParam[] = []
     for (const block of finalMsg.content) {
@@ -301,4 +437,5 @@ export async function runChatEngine({
 
   await saveMessage(userId, conversationId, 'assistant', assistantText, assistantToolCalls)
   runSentinel(userId, assistantText, 'assistant').catch(() => {/* already handled internally */})
+  send({ type: 'done', ...(contextFallback ? { contextFallback: true } : {}) })
 }

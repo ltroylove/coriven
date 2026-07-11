@@ -13,6 +13,7 @@ pub mod auth;
 pub mod briefing;
 pub mod notify;
 pub mod offline;
+pub mod patterns;
 pub mod poll;
 pub mod secure_store;
 

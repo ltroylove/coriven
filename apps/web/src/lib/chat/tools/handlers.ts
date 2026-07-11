@@ -1,7 +1,8 @@
 import { createServiceClient } from '@/lib/supabase/server'
-import type { ToolName, TaskPriority, TaskStatus, RecurrenceType } from '@personal-assistant/types'
+import type { ToolName, TaskPriority, TaskStatus, RecurrenceType, WeeklyReviewContent } from '@personal-assistant/types'
 import type { Database } from '@/types/supabase'
 import { assembleBriefing } from '@/lib/jobs/briefing'
+import { assembleWeeklyReview, storeWeeklyReview, getIsoWeekStart } from '@/lib/jobs/weekly-review'
 import { fetchEmailBody } from '@/lib/email/providers'
 import { neutralizeUntrustedOutput } from '@/lib/security/egress'
 
@@ -522,6 +523,301 @@ async function handleSubmitForApproval(input: Input, userId: string): Promise<Ha
   }
 }
 
+// ---------------------------------------------------------------------------
+// search_email_metadata
+// ---------------------------------------------------------------------------
+
+/** Default and maximum result limits for search_email_metadata (privacy invariant: metadata only). */
+const SEARCH_EMAIL_METADATA_DEFAULT_LIMIT = 10
+const SEARCH_EMAIL_METADATA_MAX_LIMIT = 20
+
+/**
+ * Search email_metadata by keyword against subject and sender.
+ * PRIVACY INVARIANT: this handler NEVER queries body fields.
+ * Returns at most SEARCH_EMAIL_METADATA_MAX_LIMIT rows ordered by received_at DESC.
+ */
+async function handleSearchEmailMetadata(input: Input, userId: string): Promise<HandlerResult> {
+  const query = String(input.query ?? '').trim()
+  if (!query) {
+    return { content: 'query is required.', is_error: true }
+  }
+
+  const rawLimit = typeof input.limit === 'number' ? input.limit : SEARCH_EMAIL_METADATA_DEFAULT_LIMIT
+  const limit = Math.min(Math.max(1, Math.floor(rawLimit)), SEARCH_EMAIL_METADATA_MAX_LIMIT)
+
+  // Escape ILIKE metacharacters so user input is treated as a literal substring.
+  const escaped = query.replace(/%/g, '\\%').replace(/_/g, '\\_')
+  const pattern = `%${escaped}%`
+
+  try {
+    const db = createServiceClient()
+    const { data, error } = await db
+      .from('email_metadata')
+      // Select ONLY metadata columns — body fields must never be included (ADR-013 privacy invariant).
+      .select('id, subject, sender, urgency, received_at')
+      .eq('user_id', userId)
+      .or(`subject.ilike.${pattern},sender.ilike.${pattern}`)
+      .order('received_at', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      console.error(
+        JSON.stringify({
+          event: 'tool.search_email_metadata.error',
+          userId,
+          error: error.message,
+        }),
+      )
+      return { content: 'Failed to search email metadata. Please try again.', is_error: true }
+    }
+
+    console.log(
+      JSON.stringify({
+        event: 'tool.search_email_metadata.called',
+        userId,
+        resultCount: (data ?? []).length,
+      }),
+    )
+
+    return { content: JSON.stringify(data ?? []), is_error: false }
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: 'tool.search_email_metadata.unexpected',
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    )
+    return { content: 'Failed to search email metadata. Please try again.', is_error: true }
+  }
+}
+
+/** Maximum body length for a push notification (native OS constraint, mirrors tray constant). */
+const PUSH_NOTIFICATION_MAX_BODY_CHARS = 100
+
+async function handlePushNotification(input: Input, userId: string): Promise<HandlerResult> {
+  const title = String(input.title ?? '').trim()
+  const body = String(input.body ?? '').trim()
+
+  if (!title) {
+    return { content: 'title is required.', is_error: true }
+  }
+  if (!body) {
+    return { content: 'body is required.', is_error: true }
+  }
+  if (body.length > PUSH_NOTIFICATION_MAX_BODY_CHARS) {
+    return {
+      content: `Notification body must be ${PUSH_NOTIFICATION_MAX_BODY_CHARS} characters or fewer (received ${body.length}). Please shorten the body and try again.`,
+      is_error: true,
+    }
+  }
+
+  const db = createServiceClient()
+  const nowDate = new Date()
+  const now = nowDate.toISOString()
+
+  // Each push_notification is an independent event and must never conflict with
+  // other rows under the partial unique index UNIQUE(user_id, pattern_type)
+  // WHERE goal_id IS NULL.  We make pattern_type unique per notification by
+  // appending a millisecond timestamp suffix, so concurrent or repeated calls
+  // never collide.
+  const patternType = `push_notification_${nowDate.getTime()}`
+
+  // Insert a detected_patterns row with last_notified_at = null so the tray picks
+  // it up on the next poll cycle.
+  const { data, error } = await db
+    .from('detected_patterns')
+    .insert({
+      user_id: userId,
+      pattern_type: patternType,
+      description: body,
+      last_detected_at: now,
+      last_notified_at: null,
+      is_active: true,
+      updated_at: now,
+      // goal_id intentionally null — push_notification is not goal-specific
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error(
+      JSON.stringify({
+        event: 'tool.push_notification.insert_error',
+        userId,
+        error: error.message,
+      }),
+    )
+    return { content: 'Failed to queue notification. Please try again.', is_error: true }
+  }
+
+  console.log(
+    JSON.stringify({
+      event: 'tool.push_notification.queued',
+      userId,
+      patternId: data.id,
+      patternType,
+    }),
+  )
+
+  return {
+    content: `Notification queued (id: ${data.id}). It will appear in the desktop tray on the next poll cycle.`,
+    is_error: false,
+  }
+}
+
+async function handleDetectPatterns(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+
+    // is_active defaults to true if not provided
+    const isActive = typeof input.is_active === 'boolean' ? input.is_active : true
+
+    let query = db
+      .from('detected_patterns')
+      .select('id, pattern_type, description, last_detected_at, last_notified_at, is_active, created_at, updated_at')
+      .eq('user_id', userId) // defensive: RLS also enforces this
+      .eq('is_active', isActive)
+      .not('pattern_type', 'like', 'push_notification_%') // exclude one-shot push delivery rows
+      .order('last_detected_at', { ascending: false })
+
+    if (input.pattern_type) {
+      query = query.eq('pattern_type', String(input.pattern_type))
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('[handleDetectPatterns] detect_patterns failed', { userId, error: error.message })
+      return { content: 'Failed to retrieve patterns. Please try again.', is_error: true }
+    }
+
+    return { content: JSON.stringify(data ?? []), is_error: false }
+  } catch (err) {
+    console.error('[handleDetectPatterns] detect_patterns unexpected error', { userId, err })
+    return { content: 'Failed to retrieve patterns. Please try again.', is_error: true }
+  }
+}
+
+async function handleGenerateWeeklyReview(input: Input, userId: string): Promise<HandlerResult> {
+  try {
+    const db = createServiceClient()
+    const forceRegenerate = Boolean(input.force_regenerate ?? false)
+    const now = new Date()
+    const weekStart = getIsoWeekStart(now)
+
+    let content: WeeklyReviewContent | null = null
+
+    if (!forceRegenerate) {
+      // Return stored review for the current ISO week
+      const { data: row, error } = await db
+        .from('daily_briefings')
+        .select('content, created_at, briefing_date')
+        .eq('user_id', userId)
+        .eq('type', 'weekly')
+        .eq('briefing_date', weekStart)
+        .maybeSingle()
+
+      if (error) {
+        console.error('[handleGenerateWeeklyReview] DB error', { userId, error: error.message })
+        return { content: 'Failed to retrieve weekly review. Please try again.', is_error: true }
+      }
+
+      if (!row) {
+        return {
+          content:
+            'No weekly review has been generated for this ISO week yet. ' +
+            'The Friday 5pm cron assembles it automatically. ' +
+            'You can also ask me to regenerate it now by saying "generate a fresh weekly review".',
+          is_error: false,
+        }
+      }
+
+      content = row.content as unknown as WeeklyReviewContent
+      const generatedDate = new Date(row.created_at).toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })
+
+      return {
+        content: formatWeeklyReviewForChat(content, generatedDate),
+        is_error: false,
+      }
+    }
+
+    // force_regenerate = true: assemble fresh, store, then return
+    content = await assembleWeeklyReview(userId, now)
+    await storeWeeklyReview(userId, content, now)
+
+    const generatedDate = now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+    })
+
+    console.log(JSON.stringify({ event: 'tool.generate_weekly_review.fresh', userId }))
+
+    return {
+      content: formatWeeklyReviewForChat(content, generatedDate),
+      is_error: false,
+    }
+  } catch (err) {
+    console.error('[handleGenerateWeeklyReview] unexpected error', { userId, err })
+    return { content: 'Failed to generate weekly review. Please try again.', is_error: true }
+  }
+}
+
+/** Format WeeklyReviewContent as a readable chat summary string. */
+function formatWeeklyReviewForChat(content: WeeklyReviewContent, generatedDate: string): string {
+  const lines: string[] = [`**Weekly Review** — generated ${generatedDate}`, '']
+
+  // Narrative paragraph (optional)
+  if (content.narrative) {
+    lines.push(content.narrative, '')
+  }
+
+  // Wins
+  lines.push(`**Wins (${content.wins.length})**`)
+  if (content.wins.length === 0) {
+    lines.push('No completed tasks this week.')
+  } else {
+    for (const win of content.wins) {
+      const goalPart = win.goalTitle ? ` *(${win.goalTitle})*` : ''
+      lines.push(`- ${win.title}${goalPart}`)
+    }
+  }
+  lines.push('')
+
+  // Blockers
+  lines.push(`**Blockers (${content.blockers.length})**`)
+  if (content.blockers.length === 0) {
+    lines.push('No blockers — clean slate.')
+  } else {
+    for (const blocker of content.blockers) {
+      lines.push(`- ${blocker.title}: ${blocker.detail}`)
+    }
+  }
+  lines.push('')
+
+  // Next-week focus
+  lines.push(`**Next-Week Focus (${content.nextWeek.length})**`)
+  if (content.nextWeek.length === 0) {
+    lines.push('No high-priority tasks due next week.')
+  } else {
+    for (const task of content.nextWeek) {
+      const due = new Date(task.dueAt).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      })
+      lines.push(`- ${task.title} *(${task.priority}, due ${due})*`)
+    }
+  }
+
+  return lines.join('\n')
+}
+
 const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<HandlerResult>> = {
   create_task: handleCreateTask,
   update_task: handleUpdateTask,
@@ -543,8 +839,12 @@ const HANDLERS: Record<ToolName, (input: Input, userId: string) => Promise<Handl
   set_goal_momentum: handleSetGoalMomentum,
   create_project: handleCreateProject,
   generate_daily_briefing: handleGenerateDailyBriefing,
+  generate_weekly_review: handleGenerateWeeklyReview,
   submit_for_approval: handleSubmitForApproval,
   get_email_thread: handleGetEmailThread,
+  search_email_metadata: handleSearchEmailMetadata,
+  detect_patterns: handleDetectPatterns,
+  push_notification: handlePushNotification,
 }
 
 export async function executeToolHandler(

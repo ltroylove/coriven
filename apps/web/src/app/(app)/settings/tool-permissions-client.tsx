@@ -24,8 +24,12 @@ const TOOL_LABELS: Record<ToolName, { label: string; description: string }> = {
   set_goal_momentum: { label: 'Set goal momentum', description: 'Update the momentum signal on a goal' },
   create_project: { label: 'Create projects', description: 'Add new projects linked to your goals' },
   generate_daily_briefing: { label: 'Generate daily briefing', description: 'Assemble a daily briefing package from your goals and tasks' },
+  generate_weekly_review: { label: 'Generate weekly review', description: 'Retrieve or assemble your weekly review: wins, blockers, and next-week focus — from real task and goal data' },
   submit_for_approval: { label: 'Submit for approval', description: 'Propose external actions (email, calendar) for your review before anything executes' },
   get_email_thread: { label: 'Read email thread', description: 'Fetch the full content of a specific email message on demand — never stored' },
+  search_email_metadata: { label: 'Search email metadata', description: 'Search email subjects and senders to surface relevant threads in cross-context answers — email bodies are never accessed' },
+  detect_patterns: { label: 'Detect patterns', description: 'Surface behavioral habits and blockers detected by the nightly pattern analysis job' },
+  push_notification: { label: 'Push notifications', description: 'Send a proactive tray notification on demand — fires on the next tray poll cycle' },
 }
 
 type Permission = { tool_name: ToolName; enabled: boolean }

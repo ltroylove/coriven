@@ -19,8 +19,12 @@ export type ToolName =
   | 'set_goal_momentum'
   | 'create_project'
   | 'generate_daily_briefing'
+  | 'generate_weekly_review'
   | 'submit_for_approval'
   | 'get_email_thread'
+  | 'search_email_metadata'
+  | 'detect_patterns'
+  | 'push_notification'
 
 export interface BehavioralConstraint {
   id: string

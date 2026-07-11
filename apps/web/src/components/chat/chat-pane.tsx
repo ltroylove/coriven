@@ -26,6 +26,8 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
   const convIdRef = useRef<string | null>(propConvId ?? null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
+  const [isBuildingContext, setIsBuildingContext] = useState(false)
+  const [contextFallbackToast, setContextFallbackToast] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -66,6 +68,7 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
     const updatedMessages = [...messages, userMsg]
     setMessages(updatedMessages)
     setIsStreaming(true)
+    setContextFallbackToast(false)
 
     if (messages.length === 0) onFirstMessage?.(text)
 
@@ -122,7 +125,20 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
   }
 
   function applySSEEvent(event: SSEEvent, assistantId: string) {
-    if (event.type === 'done' || event.type === 'error') return
+    if (event.type === 'context_building') {
+      setIsBuildingContext(true)
+      return
+    }
+    if (event.type === 'done') {
+      setIsBuildingContext(false)
+      if (event.contextFallback) setContextFallbackToast(true)
+      return
+    }
+    if (event.type === 'error') {
+      setIsBuildingContext(false)
+      return
+    }
+    setIsBuildingContext(false)
     setMessages(prev => {
       const idx = prev.findIndex(m => m.id === assistantId)
       if (idx === -1) return prev
@@ -209,6 +225,24 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
           </div>
         )}
       </div>
+      {isBuildingContext && (
+        <p aria-live="polite" className="px-4 pb-1 text-xs text-gray-500 motion-safe:animate-pulse">
+          Building context…
+        </p>
+      )}
+      {contextFallbackToast && (
+        <div role="status" className="mx-4 mb-2 flex items-center justify-between rounded-md border border-amber-800/40 bg-amber-950/30 px-3 py-2 text-xs text-amber-400">
+          <span>Context timed out — used previous snapshot</span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setContextFallbackToast(false)}
+            className="ml-3 text-amber-600 hover:text-amber-400"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <Composer onSend={handleSend} isStreaming={isStreaming || isLoadingHistory} onStop={handleStop} />
     </div>
   )

@@ -22,8 +22,11 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   'set_goal_momentum',
   'create_project',
   'generate_daily_briefing',
+  'generate_weekly_review',
   'submit_for_approval',
   'get_email_thread',
+  'detect_patterns',
+  'push_notification',
 ]
 
 export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
@@ -384,6 +387,24 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
     },
   },
 
+  generate_weekly_review: {
+    name: 'generate_weekly_review',
+    description:
+      'Returns the weekly review for the current ISO week: wins (tasks completed this week), blockers (overdue tasks and stalling goals), and next-week focus (top upcoming high-priority tasks). ' +
+      'By default returns the stored review for this week. Use force_regenerate=true to assemble a fresh review on demand.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        force_regenerate: {
+          type: 'boolean',
+          description:
+            'If true, assemble and store a fresh weekly review before returning. If false (default), return the most recent stored review for the current ISO week.',
+        },
+      },
+      required: [],
+    },
+  },
+
   get_email_thread: {
     name: 'get_email_thread',
     description:
@@ -404,6 +425,78 @@ export const TOOL_REGISTRY: Record<ToolName, Anthropic.Tool> = {
         },
       },
       required: ['provider', 'message_id'],
+    },
+  },
+
+  search_email_metadata: {
+    name: 'search_email_metadata',
+    description:
+      'Search email metadata (subject, sender, urgency, date) by keyword. ' +
+      'Use this for cross-context queries about a project, person, or topic to surface relevant email threads. ' +
+      'Returns metadata only — email bodies are never fetched by this tool.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Keyword or phrase to search against email subjects and senders.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return. Default: 10, max: 20.',
+        },
+      },
+      required: ['query'],
+    },
+  },
+
+  detect_patterns: {
+    name: 'detect_patterns',
+    description:
+      "Retrieve behavioral patterns Coriven has detected about the user's habits and blockers. " +
+      'Returns active patterns by default. Use pattern_type to filter to a specific type. ' +
+      'Results come from the nightly detection job — patterns must be detected before they appear here.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pattern_type: {
+          type: 'string',
+          enum: ['gym_days', 'weekly_review_time', 'stale_goal', 'follow_up_needed'],
+          description: 'Filter to a specific pattern type. Omit to return all types.',
+        },
+        is_active: {
+          type: 'boolean',
+          description: 'Whether to return only active patterns. Default: true.',
+        },
+      },
+      required: [],
+    },
+  },
+
+  push_notification: {
+    name: 'push_notification',
+    description:
+      'Send a proactive tray notification to the user on demand. ' +
+      'Use this when the user explicitly asks to be reminded about something at the next tray check. ' +
+      'The notification is picked up by the desktop tray on its next poll cycle and fired as a native OS notification. ' +
+      'Body must be 100 characters or fewer. Does not require user approval.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Short notification title shown in the OS notification header.',
+        },
+        body: {
+          type: 'string',
+          description: 'Notification body text. Maximum 100 characters. Longer bodies are rejected.',
+        },
+        pattern_type: {
+          type: 'string',
+          description: 'Optional pattern type to associate with this notification. Defaults to "push_notification".',
+        },
+      },
+      required: ['title', 'body'],
     },
   },
 

@@ -1,5 +1,5 @@
 ---
-lastupdated: "2026-07-06"
+lastupdated: "2026-07-08"
 type: backlog
 status: Active
 product:
@@ -44,6 +44,24 @@ The current UI is functional and sufficient for testing but is generic (plain Ta
 - Design tokens committed to the codebase (Tailwind theme extension or CSS custom properties)
 
 **Why:** First impressions drive trial conversion. The value prop is strong; the UI needs to match it before productization.
+
+---
+
+## Scheduling & Notifications
+
+### BL-004 — User timezone preference and local time display
+**Area:** Epic 7 (Proactive Intelligence) / Settings UI + all time-surfacing surfaces
+
+Standard UTC + offset pattern: everything is stored and scheduled in UTC internally. When surfacing any time to the user, apply their timezone offset so they always see their local time. When the user inputs a time (e.g. "notify me at 5pm"), convert to UTC for storage and scheduling — the user never sees UTC.
+
+**What's needed:**
+
+1. **Capture timezone in Settings** — add a timezone field to the settings page, pre-filled from the browser (`Intl.DateTimeFormat().resolvedOptions().timeZone`). Store as an IANA string (e.g. `America/Chicago`) in `profiles.timezone`.
+
+2. **Apply offset everywhere times are shown** — briefings, task due dates, notification history, cron trigger times in settings — all display in the user's local time.
+
+3. **Cron schedules use the UTC equivalent** — user sets a preferred notification time in local; that gets converted to UTC and used as the cron expression. To the user it always looks like their local time.
+
 
 ---
 
