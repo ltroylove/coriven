@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { updateBriefingSettings, ALLOWED_TIMEZONES } from '@/app/actions/profile'
 
 interface BriefingSettingsClientProps {
@@ -14,6 +14,14 @@ export function BriefingSettingsClient({ initialTimezone, initialBriefingTime }:
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [detectedTimezone, setDetectedTimezone] = useState<string | null>(null)
+
+  useEffect(() => {
+    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (browserTz && browserTz !== initialTimezone && ALLOWED_TIMEZONES.includes(browserTz)) {
+      setDetectedTimezone(browserTz)
+    }
+  }, [initialTimezone])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -39,6 +47,21 @@ export function BriefingSettingsClient({ initialTimezone, initialBriefingTime }:
         <p role="alert" className="text-sm text-red-400 bg-red-950/40 border border-red-800/50 rounded-lg px-4 py-2">
           {error}
         </p>
+      )}
+
+      {detectedTimezone && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-800/40 bg-blue-950/20 px-4 py-2.5 text-sm">
+          <span className="text-blue-300">
+            Your browser is set to <span className="font-medium">{detectedTimezone}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => { setTimezone(detectedTimezone); setDetectedTimezone(null) }}
+            className="shrink-0 text-xs text-blue-400 hover:text-blue-200 transition-colors font-medium"
+          >
+            Use this
+          </button>
+        </div>
       )}
 
       <div className="flex flex-col gap-1.5">

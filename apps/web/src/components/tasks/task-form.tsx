@@ -3,6 +3,8 @@
 import { useState, useTransition, useEffect } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import { createTask, updateTask, getTask, addReminder, deleteReminder } from '@/app/actions/tasks'
+import { useTimezone } from '@/components/providers/timezone-provider'
+import { utcToLocalDatetime, localDatetimeToUtc } from '@/lib/utils/timezone'
 import type { Task, TaskPriority, TaskStatus, TaskReminder, RecurrenceType } from '@personal-assistant/types'
 
 type Props = {
@@ -23,22 +25,23 @@ function emptyDraft(): ReminderDraft {
   return { key: crypto.randomUUID(), remind_at: '', recurrence_type: 'none', recurrence_end_at: '' }
 }
 
-function reminderToDraft(r: TaskReminder): ReminderDraft {
+function reminderToDraft(r: TaskReminder, timezone: string): ReminderDraft {
   return {
     key: r.id,
-    remind_at: r.remind_at.slice(0, 16),
+    remind_at: utcToLocalDatetime(r.remind_at, timezone),
     recurrence_type: r.recurrence_type,
-    recurrence_end_at: r.recurrence_end_at ? r.recurrence_end_at.slice(0, 16) : '',
+    recurrence_end_at: r.recurrence_end_at ? utcToLocalDatetime(r.recurrence_end_at, timezone) : '',
     existingId: r.id,
   }
 }
 
 export function TaskForm({ task, onClose }: Props) {
+  const timezone = useTimezone()
   const [title, setTitle] = useState(task?.title ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
   const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? 'medium')
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? 'pending')
-  const [dueAt, setDueAt] = useState(task?.due_at ? task.due_at.slice(0, 16) : '')
+  const [dueAt, setDueAt] = useState(task?.due_at ? utcToLocalDatetime(task.due_at, timezone) : '')
   const [reminders, setReminders] = useState<ReminderDraft[]>([])
   const [removedIds, setRemovedIds] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -55,10 +58,10 @@ export function TaskForm({ task, onClose }: Props) {
       setDescription(fresh.description ?? '')
       setPriority(fresh.priority)
       setStatus(fresh.status)
-      setDueAt(fresh.due_at ? fresh.due_at.slice(0, 16) : '')
+      setDueAt(fresh.due_at ? utcToLocalDatetime(fresh.due_at, timezone) : '')
       // Map fresh reminders to drafts
       const existing = (fresh as unknown as { reminders?: TaskReminder[] }).reminders ?? []
-      setReminders(existing.map(reminderToDraft))
+      setReminders(existing.map(r => reminderToDraft(r, timezone)))
       setRemovedIds([])
       setError(null)
     })
@@ -94,7 +97,7 @@ export function TaskForm({ task, onClose }: Props) {
             description: description.trim() || undefined,
             priority,
             status,
-            due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
+            due_at: dueAt ? localDatetimeToUtc(dueAt, timezone) : undefined,
           })
           // Delete removed reminders
           for (const id of removedIds) await deleteReminder(id)
@@ -102,9 +105,9 @@ export function TaskForm({ task, onClose }: Props) {
           for (const r of reminders) {
             if (!r.existingId) {
               await addReminder(task.id, {
-                remind_at: new Date(r.remind_at).toISOString(),
+                remind_at: localDatetimeToUtc(r.remind_at, timezone),
                 recurrence_type: r.recurrence_type,
-                recurrence_end_at: r.recurrence_end_at ? new Date(r.recurrence_end_at).toISOString() : undefined,
+                recurrence_end_at: r.recurrence_end_at ? localDatetimeToUtc(r.recurrence_end_at, timezone) : undefined,
               })
             }
           }
@@ -113,13 +116,13 @@ export function TaskForm({ task, onClose }: Props) {
             title: title.trim(),
             description: description.trim() || undefined,
             priority,
-            due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
+            due_at: dueAt ? localDatetimeToUtc(dueAt, timezone) : undefined,
             reminders: reminders
               .filter(r => r.remind_at)
               .map(r => ({
-                remind_at: new Date(r.remind_at).toISOString(),
+                remind_at: localDatetimeToUtc(r.remind_at, timezone),
                 recurrence_type: r.recurrence_type,
-                recurrence_end_at: r.recurrence_end_at ? new Date(r.recurrence_end_at).toISOString() : undefined,
+                recurrence_end_at: r.recurrence_end_at ? localDatetimeToUtc(r.recurrence_end_at, timezone) : undefined,
               })),
           })
         }

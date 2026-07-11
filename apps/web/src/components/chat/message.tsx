@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Zap, CheckCircle2, XCircle } from 'lucide-react'
+import { useTimezone } from '@/components/providers/timezone-provider'
+import { formatInTimezone } from '@/lib/utils/timezone'
 import type { ChatMessage, ToolUseBlock, ToolResultBlock } from './types'
 
 function ToolCallCard({ block, result }: { block: ToolUseBlock; result?: ToolResultBlock }) {
@@ -60,6 +62,7 @@ function ToolCallCard({ block, result }: { block: ToolUseBlock; result?: ToolRes
 }
 
 function UserMessage({ message }: { message: ChatMessage }) {
+  const timezone = useTimezone()
   const textBlocks = message.content.filter(b => b.type === 'text') as { type: 'text'; text: string }[]
 
   return (
@@ -76,7 +79,7 @@ function UserMessage({ message }: { message: ChatMessage }) {
       </div>
       <div className="flex justify-end pr-0">
         <span className="text-[10px] text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity mr-1">
-          {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {formatInTimezone(message.created_at, timezone, { hour: '2-digit', minute: '2-digit' })}
         </span>
       </div>
     </div>
@@ -84,6 +87,7 @@ function UserMessage({ message }: { message: ChatMessage }) {
 }
 
 function AssistantMessage({ message, isStreaming }: { message: ChatMessage; isStreaming?: boolean }) {
+  const timezone = useTimezone()
   const toolUseBlocks = message.content.filter(b => b.type === 'tool_use') as ToolUseBlock[]
   const toolResultBlocks = message.content.filter(b => b.type === 'tool_result') as ToolResultBlock[]
   const textBlocks = message.content.filter(b => b.type === 'text') as { type: 'text'; text: string }[]
@@ -122,7 +126,7 @@ function AssistantMessage({ message, isStreaming }: { message: ChatMessage; isSt
         )}
 
         <span className="text-[10px] text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity block mt-2">
-          {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {formatInTimezone(message.created_at, timezone, { hour: '2-digit', minute: '2-digit' })}
         </span>
       </div>
     </div>
