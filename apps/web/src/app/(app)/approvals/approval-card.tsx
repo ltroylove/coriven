@@ -108,7 +108,7 @@ export function ApprovalCard({
         </span>
         <span className="text-xs text-gray-500">{item.provider}</span>
         <span className="ml-auto text-xs text-gray-600">
-          {formatInTimezone(item.created_at, timezone)}
+          {formatInTimezone(item.created_at, timezone, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
         </span>
       </div>
 

@@ -83,9 +83,9 @@ export function HistoryRow({
           </div>
 
           <p className="text-xs text-gray-600 mt-1">
-            Created {formatInTimezone(item.created_at, timezone)}
-            {item.reviewed_at && ` · Reviewed ${formatInTimezone(item.reviewed_at, timezone)}`}
-            {item.executed_at && ` · Executed ${formatInTimezone(item.executed_at, timezone)}`}
+            Created {formatInTimezone(item.created_at, timezone, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            {item.reviewed_at && ` · Reviewed ${formatInTimezone(item.reviewed_at, timezone, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+            {item.executed_at && ` · Executed ${formatInTimezone(item.executed_at, timezone, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
           </p>
 
           {/* Failure reason */}

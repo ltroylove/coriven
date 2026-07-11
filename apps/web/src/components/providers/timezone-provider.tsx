@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from 'react'
 
-const TimezoneContext = createContext<string>('America/Chicago')
+const TimezoneContext = createContext<string>('UTC')
 
 export function TimezoneProvider({
   timezone,
