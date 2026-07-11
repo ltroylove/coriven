@@ -1,6 +1,6 @@
 /**
  * Format an ISO timestamp in a specific IANA timezone.
- * Wraps Intl.DateTimeFormat so callers never need to handle the timezone option themselves.
+ * Returns '—' for invalid dates or unrecognised timezone strings.
  */
 export function formatInTimezone(
   isoString: string,
@@ -14,56 +14,85 @@ export function formatInTimezone(
 ): string {
   const d = new Date(isoString)
   if (isNaN(d.getTime())) return '—'
-  return new Intl.DateTimeFormat('en-US', { ...options, timeZone: timezone }).format(d)
+  try {
+    return new Intl.DateTimeFormat('en-US', { ...options, timeZone: timezone }).format(d)
+  } catch (e) {
+    if (e instanceof RangeError) return '—'
+    throw e
+  }
 }
 
 /**
  * Convert a UTC ISO string to a datetime-local input value ("YYYY-MM-DDTHH:MM")
- * expressed in the given IANA timezone. Used to pre-fill datetime-local inputs
- * so the user sees and edits the time in their configured timezone.
+ * expressed in the given IANA timezone. Returns '' for invalid dates or timezones.
  */
 export function utcToLocalDatetime(isoString: string, timezone: string): string {
   const d = new Date(isoString)
   if (isNaN(d.getTime())) return ''
-  // sv-SE formats as "YYYY-MM-DD HH:MM" natively
-  return new Intl.DateTimeFormat('sv-SE', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-    .format(d)
-    .replace(' ', 'T')
+  try {
+    // sv-SE formats as "YYYY-MM-DD HH:MM" natively
+    return new Intl.DateTimeFormat('sv-SE', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+      .format(d)
+      .replace(' ', 'T')
+  } catch (e) {
+    if (e instanceof RangeError) return ''
+    throw e
+  }
 }
 
 /**
  * Convert a datetime-local input value ("YYYY-MM-DDTHH:MM") — interpreted as a
  * time in the given IANA timezone — to a UTC ISO string for storage.
- * Uses a single-pass offset correction via Intl; accurate for all non-DST-fold cases.
+ *
+ * Uses a two-pass offset correction so DST-transition times (spring-forward gaps,
+ * fall-back folds) are handled correctly. Throws for malformed input or invalid
+ * timezone strings so callers can surface a meaningful error.
  */
 export function localDatetimeToUtc(localStr: string, timezone: string): string {
-  // Treat the input as a naive UTC instant first
   const fakeUtc = new Date(localStr + ':00.000Z')
-  if (isNaN(fakeUtc.getTime())) return new Date(localStr).toISOString()
-  // Find what clock time the target timezone shows for that naive instant
-  const tzStr = new Intl.DateTimeFormat('sv-SE', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  })
-    .format(fakeUtc)
-    .replace(' ', 'T')
-  const tzClockMs = new Date(tzStr + '.000Z').getTime()
-  // Shift fakeUtc by (desired - tz clock) so the timezone shows the desired time
-  return new Date(fakeUtc.getTime() + (fakeUtc.getTime() - tzClockMs)).toISOString()
+  if (isNaN(fakeUtc.getTime())) throw new Error(`Invalid datetime value: ${localStr}`)
+
+  try {
+    const tzFormat = (d: Date) =>
+      new Intl.DateTimeFormat('sv-SE', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      })
+        .format(d)
+        .replace(' ', 'T')
+
+    // First pass: correct using the offset observed at the naive UTC instant.
+    const tzStr1 = tzFormat(fakeUtc)
+    const tzClockMs1 = new Date(tzStr1 + '.000Z').getTime()
+    const corrected1 = new Date(fakeUtc.getTime() + (fakeUtc.getTime() - tzClockMs1))
+
+    // Second pass: verify the corrected instant formats back to the input time.
+    // A mismatch means we landed on the wrong side of a DST boundary (spring-forward
+    // gaps produce a result 1 hour late; fall-back folds are stable on first pass).
+    const tzStr2 = tzFormat(corrected1)
+    if (tzStr2.slice(0, 16) === localStr.slice(0, 16)) return corrected1.toISOString()
+
+    // Re-apply correction using the offset observed at corrected1.
+    const tzClockMs2 = new Date(tzStr2 + '.000Z').getTime()
+    return new Date(corrected1.getTime() + (fakeUtc.getTime() - tzClockMs2)).toISOString()
+  } catch (e) {
+    if (e instanceof RangeError) throw new Error(`Invalid timezone: ${timezone}`)
+    throw e
+  }
 }
 
 /**

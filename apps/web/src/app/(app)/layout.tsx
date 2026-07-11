@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .eq('id', user.id)
     .single()
 
-  const timezone = profile?.timezone ?? 'America/Chicago'
+  const timezone = profile?.timezone ?? 'UTC'
 
   return (
     <TimezoneProvider timezone={timezone}>
