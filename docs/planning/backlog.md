@@ -88,3 +88,20 @@ When a user asks "what can you do?", "how do I add a task?", "what is a constrai
 **Why:** Users will ask the assistant about itself constantly. Getting this wrong erodes trust immediately — if the assistant doesn't know its own app, users assume it doesn't know anything else either.
 
 ---
+
+### BL-005 — Assistant should handle general conversation, not deflect to "I only do tasks"
+**Area:** Epic 2 (Persistent Memory) / Chat system prompt & assistant persona — related to [[BL-003]]
+
+The assistant currently over-refuses anything outside task/reminder/goal management. When the user chats about a general topic (e.g. a survival game), it bounces back with a canned deflection like:
+
+> "That's a fun survival game! However, I'm a personal assistant focused on helping you manage **tasks, reminders, and goals**."
+
+This makes Coriven feel narrow, scripted, and less capable than a basic chatbot. It should be a **full conversational assistant** — able to engage naturally with **any** topic — that *also* happens to be excellent at tasks, reminders, and goals. The productivity focus should be a strength it brings to the conversation, not a cage that redirects the user away from what they actually asked.
+
+**This applies to ALL chatting**, not just the survival-game example — any general/casual/off-topic message should get a real, helpful answer, not a scope-refusal.
+
+**Fix:** Revise the chat system prompt's scoping/persona instructions so the assistant answers general questions directly and personably. Only steer toward productivity features when it's genuinely relevant or helpful, never as a refusal. Keep the assistant grounded (no hallucinating product facts — see [[BL-003]]) while letting it be a normal, well-rounded conversational partner.
+
+**Why:** General chat is table stakes for an AI assistant. A canned "I only do tasks" deflection erodes trust the same way not knowing its own product does (BL-003) — users conclude the assistant is rigid and unintelligent, and stop reaching for it.
+
+---
