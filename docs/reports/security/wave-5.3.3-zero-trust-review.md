@@ -1,5 +1,4 @@
 ---
-preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "backend-specialist agent (Wave 5.3.3)"
 datecreated: "2026-07-04"
 type: security-review
