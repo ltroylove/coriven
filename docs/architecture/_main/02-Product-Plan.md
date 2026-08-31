@@ -1,5 +1,4 @@
 ---
-preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-06-29"
 lastupdated: "2026-06-29T00:00:00"
@@ -222,7 +221,7 @@ A personal tool that pays for its build by becoming a product. The compounding-m
 ### Current Iteration Context
 
 - **Phase**: Discovery & Foundation → transition to Development.
-- **Iteration Goals**: Convert the master blueprint into the Lighthouse artifact set, then resume implementation at Phase 2.
+- **Iteration Goals**: Convert the master blueprint into the full artifact set, then resume implementation at Phase 2.
 - **Next Review Trigger**: Phase 2 kickoff or any change to a §19 decision.
 
 ### Iteration Learning Integration
@@ -237,7 +236,7 @@ A personal tool that pays for its build by becoming a product. The compounding-m
 
 | Version | Date | Changes | Trigger | Approved By |
 |---|---|---|---|---|
-| 1.0 | 2026-06-29 | Initial plan synthesized from master blueprint | Lighthouse begin | Roy Love (pending) |
+| 1.0 | 2026-06-29 | Initial plan synthesized from master blueprint | Project kickoff | Roy Love (pending) |
 
 ### Artifact Dependencies
 

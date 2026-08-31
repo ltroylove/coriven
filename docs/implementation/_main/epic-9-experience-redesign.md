@@ -1,5 +1,4 @@
 ---
-preparedfor: "Onshore Outsourcing Inc. -- Internal Use Only"
 preparedby: "Roy Love"
 datecreated: "2026-07-11"
 lastupdated: "2026-07-11T00:00:00"
