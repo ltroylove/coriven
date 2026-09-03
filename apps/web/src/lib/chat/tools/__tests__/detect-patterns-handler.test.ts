@@ -16,7 +16,7 @@ const { executeToolHandler } = await import('../handlers')
 const MOCK_USER_ID = 'user-test-123'
 
 /** Build a mock Supabase client for the detect_patterns query chain.
- *  Chain: .from().select().eq().eq().order()
+ *  Chain: .from().select().eq().eq().not().order()
  */
 function makeDetectPatternsClient(opts: {
   data?: unknown[] | null
@@ -26,7 +26,8 @@ function makeDetectPatternsClient(opts: {
     data: opts.data ?? [],
     error: opts.error ?? null,
   })
-  const eq2 = vi.fn().mockReturnValue({ order })
+  const not = vi.fn().mockReturnValue({ order })
+  const eq2 = vi.fn().mockReturnValue({ not })
   const eq1 = vi.fn().mockReturnValue({ eq: eq2 })
   const select = vi.fn().mockReturnValue({ eq: eq1 })
 

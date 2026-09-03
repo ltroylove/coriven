@@ -4,26 +4,23 @@ import { useState, useRef, useEffect } from 'react'
 import { Message } from '@/components/chat/message'
 import { Composer } from '@/components/chat/composer'
 import { getChatHistory } from '@/app/actions/chat'
+import { useActiveConversation } from '@/components/providers/conversation-provider'
 import type { ChatMessage } from '@/components/chat/types'
 import type { SSEEvent } from '@/lib/chat/engine'
 
-const PANEL_CONV_KEY = 'chat-panel-conversation-id'
-
-function getOrCreatePanelConvId(): string {
-  const stored = localStorage.getItem(PANEL_CONV_KEY)
-  if (stored) return stored
-  const id = crypto.randomUUID()
-  localStorage.setItem(PANEL_CONV_KEY, id)
-  return id
-}
-
 interface ChatPaneProps {
+  /** When provided (e.g. from the legacy /chat route), overrides the store. */
   conversationId?: string
   onFirstMessage?: (text: string) => void
 }
 
 export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPaneProps) {
-  const convIdRef = useRef<string | null>(propConvId ?? null)
+  const { activeConversationId } = useActiveConversation()
+  // Prop overrides the store (backward-compat with ChatClient in /chat route).
+  const convId = propConvId ?? activeConversationId
+  const convIdRef = useRef<string>(convId)
+  convIdRef.current = convId
+
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [isBuildingContext, setIsBuildingContext] = useState(false)
@@ -32,15 +29,14 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  // Resolve conversation ID and load history on mount.
+  // Load history when conversation id is known (not empty).
   // Deduplication: persisted messages have stable DB-assigned UUIDs; any
   // in-session SSE messages that share an id (e.g. from an optimistic add)
   // are filtered out before merging to prevent duplicates (Story 1.4.1.1).
   useEffect(() => {
-    if (!convIdRef.current) {
-      convIdRef.current = getOrCreatePanelConvId()
-    }
-    getChatHistory(convIdRef.current).then(history => {
+    if (!convId) return // Wait for provider to hydrate.
+    setIsLoadingHistory(true)
+    getChatHistory(convId).then(history => {
       setMessages(prev => {
         if (prev.length === 0) return history
         const existingIds = new Set(history.map(m => m.id))
@@ -49,14 +45,14 @@ export function ChatPane({ conversationId: propConvId, onFirstMessage }: ChatPan
       })
       setIsLoadingHistory(false)
     })
-  }, [])
+  }, [convId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
   async function handleSend(text: string) {
-    const convId = convIdRef.current!
+    const convId = convIdRef.current
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),

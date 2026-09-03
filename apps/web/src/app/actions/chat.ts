@@ -78,6 +78,57 @@ function buildContentBlocks(
   return blocks
 }
 
+// ---------------------------------------------------------------------------
+// Conversation list (Task 9.1.2.2.2 — contract C1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shape returned by listConversations() — frozen by contract C1 (epic-9-shared-contracts).
+ * Wave 9.3.1 (⌘K palette) consumes this shape unchanged; do not alter.
+ */
+export type ConversationSummary = {
+  id: string
+  title: string | null
+  updated_at: string
+  pinned_at: string | null
+}
+
+/**
+ * List conversations owned by the authenticated user.
+ *
+ * Ordering: pinned conversations first (pinned_at DESC NULLS LAST), then by
+ * most-recently-updated (updated_at DESC) — matching the C1 contract ordering.
+ * Archived conversations (archived_at IS NOT NULL) are excluded.
+ *
+ * Returns [] and logs on any auth or DB error (UI shows empty state).
+ * Auth is scoped via RLS: the Supabase SSR client carries the user's session
+ * so the DB enforces row-level isolation — no explicit user_id filter needed.
+ */
+export async function listConversations(): Promise<ConversationSummary[]> {
+  try {
+    const supabase = await createAuthServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('id, title, updated_at, pinned_at')
+      .is('archived_at', null)
+      .order('pinned_at', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false })
+
+    if (error) {
+      console.error('[listConversations] DB error:', JSON.stringify({ error: error.message }))
+      return []
+    }
+
+    return (data ?? []) as ConversationSummary[]
+  } catch (err) {
+    console.error('[listConversations] Unexpected error:', String(err))
+    return []
+  }
+}
+
 /**
  * Fetch up to 200 messages for a conversation, ordered oldest-first.
  * Returns [] (never throws) for unauthenticated callers or on any DB error.

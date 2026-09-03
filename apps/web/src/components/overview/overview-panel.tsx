@@ -1,4 +1,3 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
 import { BriefingSection } from '@/components/briefing/briefing-section'
@@ -105,12 +104,20 @@ function MeetingPrepSection({ briefs, timezone }: { briefs: MeetingBriefRow[]; t
   )
 }
 
-export default async function TodayPage() {
+// ---------------------------------------------------------------------------
+// OverviewPanel — server component; renders today's briefing + meeting prep.
+// Extracted from (app)/today/page.tsx so that / can render it as the interim
+// panel home. Will be replaced by the board in Wave 9.2.3.
+// ---------------------------------------------------------------------------
+export async function OverviewPanel() {
   const supabase = await createAuthServerClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/?next=/today')
 
-  // 9b — resolve today's date in the user's local timezone
+  if (!user) {
+    return <div className="text-sm text-gray-500 p-6">Not authenticated.</div>
+  }
+
+  // Resolve today's date in the user's local timezone
   const { data: profile } = await supabase
     .from('profiles')
     .select('timezone')
@@ -118,13 +125,8 @@ export default async function TodayPage() {
     .single()
 
   const timezone = profile?.timezone ?? 'America/Chicago'
-  // en-CA locale formats as YYYY-MM-DD natively
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date())
 
-  // 9a — handle fetch error explicitly; PGRST116 = no row found (not a real error)
-  // Filter by type = 'daily' to avoid matching the weekly row when both share the
-  // same briefing_date (e.g. on Mondays, the weekly review is stored with the ISO
-  // week-start Monday as briefing_date, which can equal today's date).
   const { data: briefing, error: briefingError } = await supabase
     .from('daily_briefings')
     .select('*')
@@ -133,10 +135,9 @@ export default async function TodayPage() {
     .eq('briefing_date', today)
     .maybeSingle()
 
-  // Weekly review — query for the current ISO week's review
-  // The weekly review is stored with briefing_date = ISO week-start Monday (UTC).
+  // Weekly review — current ISO week
   const nowUtc = new Date()
-  const dayOfWeek = nowUtc.getUTCDay() // 0 = Sun, 1 = Mon, …
+  const dayOfWeek = nowUtc.getUTCDay()
   const daysToMonday = (dayOfWeek + 6) % 7
   const weekStartUtc = new Date(nowUtc)
   weekStartUtc.setUTCDate(weekStartUtc.getUTCDate() - daysToMonday)
@@ -161,16 +162,14 @@ export default async function TodayPage() {
     .order('event_start', { ascending: true })
 
   if (briefingError && briefingError.code !== 'PGRST116') {
-    console.error('[today] briefing fetch failed', briefingError)
-    return <div>Couldn&apos;t load your briefing. Try refreshing.</div>
+    console.error('[overview] briefing fetch failed', briefingError)
+    return <div className="p-6">Couldn&apos;t load your briefing. Try refreshing.</div>
   }
 
-  // Resolve optional weekly review content for rendering
   const weeklyReviewContent = weeklyBriefing
     ? (weeklyBriefing.content as unknown as WeeklyReviewContent)
     : null
 
-  // No briefing for today — empty state (still show meeting prep + weekly review if available)
   if (!briefing) {
     return (
       <div>
@@ -179,10 +178,9 @@ export default async function TodayPage() {
           <p className="text-sm text-gray-500 mt-0.5">Your daily briefing</p>
         </div>
         <div className="rounded-lg border border-dashed border-gray-800 p-8 text-center max-w-md mb-8">
-          {/* 9c — removed hardcoded "tomorrow at 7am" assumption */}
           <p className="text-sm text-gray-400">
             Your daily briefing hasn&apos;t arrived yet. Check back after your configured briefing time, or ask Coriven anything in{' '}
-            <Link href="/chat" className="text-blue-500 hover:text-blue-400 transition-colors">
+            <Link href="/" className="text-blue-500 hover:text-blue-400 transition-colors">
               Chat
             </Link>
             .
@@ -206,7 +204,6 @@ export default async function TodayPage() {
 
   const content = briefing.content as unknown as BriefingContent
 
-  // Build section items
   const goalsInMotionItems = content.goalsInMotion.map((goal) => (
     <Link
       key={goal.goalId}
@@ -262,7 +259,9 @@ export default async function TodayPage() {
               {content.approvalsPending} pending{' '}
               {content.approvalsPending === 1 ? 'approval' : 'approvals'}
             </span>
-            <span className="text-xs text-gray-500">→ Review</span>
+            <Link href="/activity" className="text-xs text-blue-500 hover:text-blue-400 transition-colors">
+              Review
+            </Link>
           </div>,
         ]
       : []
@@ -300,7 +299,6 @@ export default async function TodayPage() {
         />
       </div>
 
-      {/* Weekly review — only rendered when a review exists for the current ISO week */}
       {weeklyReviewContent && weeklyBriefing && (
         <div className="mt-8">
           <WeeklyReviewSection
@@ -313,7 +311,6 @@ export default async function TodayPage() {
         </div>
       )}
 
-      {/* Meeting prep — only rendered when briefs exist */}
       {(meetingBriefs ?? []).length > 0 && (
         <div className="mt-8">
           <MeetingPrepSection briefs={meetingBriefs ?? []} timezone={timezone} />

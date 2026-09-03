@@ -43,6 +43,38 @@ vi.mock('@/lib/anthropic', () => ({
 const UPSTASH_MARKER = 'SENTINEL_MARKER_ENTITY_UNIQUE_STRING'
 const SUPABASE_MARKER = 'SUPABASE_FALLBACK_MARKER_UNIQUE_STRING'
 
+/**
+ * Build a table-aware Supabase service-client mock.
+ * The `conversations` table gets upsert + update(.eq(.is())) support
+ * (needed by saveMessage after Task 9.1.2.2.1); all other tables fall back
+ * to the generic chain used by the sentinel tests.
+ */
+function makeEngineServiceClientMock() {
+  const conversationsMock = {
+    upsert: vi.fn().mockResolvedValue({ error: null }),
+    update: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        is: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    }),
+  }
+  const genericTableMock = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockResolvedValue({ error: null }),
+    upsert: vi.fn().mockResolvedValue({ error: null }),
+    single: vi.fn().mockResolvedValue({ data: null }),
+    limit: vi.fn().mockResolvedValue({ data: [] }),
+  }
+  return {
+    from: vi.fn((table: string) => {
+      if (table === 'conversations') return conversationsMock
+      return genericTableMock
+    }),
+    rpc: vi.fn().mockResolvedValue({ data: [] }),
+  }
+}
+
 describe('Sentinel Integration Contract', () => {
   beforeEach(() => vi.resetModules())
 
@@ -70,18 +102,9 @@ describe('Sentinel Integration Contract', () => {
       return mockStream as never
     }) as never)
 
-    // Mock Supabase for message persistence
+    // Mock Supabase for message persistence (conversations + generic tables)
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockResolvedValue({ error: null }),
-        single: vi.fn().mockResolvedValue({ data: null }),
-        limit: vi.fn().mockResolvedValue({ data: [] }),
-      }),
-      rpc: vi.fn().mockResolvedValue({ data: [] }),
-    } as never)
+    vi.mocked(createServiceClient).mockReturnValue(makeEngineServiceClientMock() as never)
 
     const { runChatEngine } = await import('@/lib/chat/engine')
     const events: unknown[] = []
@@ -120,16 +143,7 @@ describe('Sentinel Integration Contract', () => {
     }) as never)
 
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockResolvedValue({ error: null }),
-        single: vi.fn().mockResolvedValue({ data: null }),
-        limit: vi.fn().mockResolvedValue({ data: [] }),
-      }),
-      rpc: vi.fn().mockResolvedValue({ data: [] }),
-    } as never)
+    vi.mocked(createServiceClient).mockReturnValue(makeEngineServiceClientMock() as never)
 
     const { runChatEngine } = await import('@/lib/chat/engine')
     await runChatEngine({
@@ -158,16 +172,7 @@ describe('Sentinel Integration Contract', () => {
     vi.mocked(anthropic.messages.stream).mockReturnValue(mockStream as never)
 
     const { createServiceClient } = await import('@/lib/supabase/server')
-    vi.mocked(createServiceClient).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockResolvedValue({ error: null }),
-        single: vi.fn().mockResolvedValue({ data: null }),
-        limit: vi.fn().mockResolvedValue({ data: [] }),
-      }),
-      rpc: vi.fn().mockResolvedValue({ data: [] }),
-    } as never)
+    vi.mocked(createServiceClient).mockReturnValue(makeEngineServiceClientMock() as never)
 
     const { runChatEngine } = await import('@/lib/chat/engine')
     await expect(
