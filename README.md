@@ -9,6 +9,19 @@ silently acting on a stale belief about the user.
 
 > Built as a personal project. Web app plus a Windows desktop tray client.
 
+## Status
+
+Coriven is a **working prototype**, built to answer one design question: can an assistant carry
+genuine context across sessions without flooding the model's window or acting on a stale belief
+about the user? The parts that answer it are the point, and they work — the memory layer
+(versioned facts, a bounded and cached context package, pgvector retrieval), the pre-action
+constraint gate, and the approval queue with an append-only audit log. The UI is scaffolding:
+enough to exercise the system, not a product surface.
+
+Development paused once the design question had an answer. The decisions are recorded in the
+ADRs below; the open questions (sync vs. async context building, a real design pass) are in
+`docs/planning/backlog.md`.
+
 ---
 
 ## What it does

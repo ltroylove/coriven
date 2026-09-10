@@ -16,22 +16,24 @@ const { executeToolHandler } = await import('../handlers')
 const MOCK_USER_ID = 'user-test-123'
 
 /** Build a mock Supabase client for the detect_patterns query chain.
- *  Chain: .from().select().eq().eq().order()
+ *  The handler chains .select().eq().eq().not().order() and optionally a further .eq(),
+ *  then awaits the builder. Every builder method returns the builder; awaiting it resolves
+ *  to the configured result, so the mock survives filter changes in the handler.
  */
 function makeDetectPatternsClient(opts: {
   data?: unknown[] | null
   error?: { message: string } | null
 }) {
-  const order = vi.fn().mockResolvedValue({
-    data: opts.data ?? [],
-    error: opts.error ?? null,
-  })
-  const eq2 = vi.fn().mockReturnValue({ order })
-  const eq1 = vi.fn().mockReturnValue({ eq: eq2 })
-  const select = vi.fn().mockReturnValue({ eq: eq1 })
+  const result = { data: opts.data ?? [], error: opts.error ?? null }
+  const builder: Record<string, unknown> = {}
+  for (const method of ['select', 'eq', 'neq', 'not', 'order', 'limit']) {
+    builder[method] = vi.fn().mockReturnValue(builder)
+  }
+  builder.then = (resolve: (v: typeof result) => unknown, reject?: (e: unknown) => unknown) =>
+    Promise.resolve(result).then(resolve, reject)
 
   return {
-    from: vi.fn().mockReturnValue({ select }),
+    from: vi.fn().mockReturnValue(builder),
   }
 }
 
