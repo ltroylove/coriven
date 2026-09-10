@@ -92,12 +92,12 @@ function makeToolPermissionsClient(
           }),
         }
       }
-      if (table === 'profiles') {
-        // engine.ts reads profiles.sentinel_mode once per turn; fail-safe default is 'async'
+      if (table === 'conversations') {
         return {
-          select: vi.fn().mockReturnValue({
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: { sentinel_mode: 'async' }, error: null }),
+              is: vi.fn().mockResolvedValue({ error: null }),
             }),
           }),
         }
@@ -328,7 +328,7 @@ describe('Task 7.4.1.2.1 — Multi-store tool calls within a single turn', () =>
       { tool_name: 'recall_memories', enabled: true },
     ]
 
-    // Supabase client needs to handle tool_permissions, conversation_messages, tasks, goals, memories
+    // Supabase client needs to handle tool_permissions, conversations, conversation_messages, tasks, goals, memories
     const mockDb = {
       from: vi.fn((table: string) => {
         if (table === 'tool_permissions') {
@@ -338,8 +338,21 @@ describe('Task 7.4.1.2.1 — Multi-store tool calls within a single turn', () =>
             }),
           }
         }
+        if (table === 'conversations') {
+          return {
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ error: null }),
+              }),
+            }),
+          }
+        }
+        if (table === 'conversation_messages') {
+          return { insert: vi.fn().mockResolvedValue({ error: null }) }
+        }
         if (table === 'profiles') {
-          // engine.ts reads profiles.sentinel_mode once per turn; fail-safe default is 'async'
+          // sentinel_mode read: .select('sentinel_mode').eq('id', userId).single()
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
@@ -347,9 +360,6 @@ describe('Task 7.4.1.2.1 — Multi-store tool calls within a single turn', () =>
               }),
             }),
           }
-        }
-        if (table === 'conversation_messages') {
-          return { insert: vi.fn().mockResolvedValue({ error: null }) }
         }
         if (table === 'tasks') {
           const data = [{ id: 'task-1', title: 'Buy gym equipment', status: 'pending', priority: 'high', reminders: [] }]
@@ -460,8 +470,21 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
             }),
           }
         }
+        if (table === 'conversations') {
+          return {
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ error: null }),
+              }),
+            }),
+          }
+        }
+        if (table === 'conversation_messages') {
+          return { insert: vi.fn().mockResolvedValue({ error: null }) }
+        }
         if (table === 'profiles') {
-          // engine.ts reads profiles.sentinel_mode once per turn; fail-safe default is 'async'
+          // sentinel_mode read: .select('sentinel_mode').eq('id', userId).single()
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
@@ -469,9 +492,6 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
               }),
             }),
           }
-        }
-        if (table === 'conversation_messages') {
-          return { insert: vi.fn().mockResolvedValue({ error: null }) }
         }
         // All data tables return empty
         return {
@@ -601,8 +621,21 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
             }),
           }
         }
+        if (table === 'conversations') {
+          return {
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ error: null }),
+              }),
+            }),
+          }
+        }
+        if (table === 'conversation_messages') {
+          return { insert: vi.fn().mockResolvedValue({ error: null }) }
+        }
         if (table === 'profiles') {
-          // engine.ts reads profiles.sentinel_mode once per turn; fail-safe default is 'async'
+          // sentinel_mode read: .select('sentinel_mode').eq('id', userId).single()
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
@@ -610,9 +643,6 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
               }),
             }),
           }
-        }
-        if (table === 'conversation_messages') {
-          return { insert: vi.fn().mockResolvedValue({ error: null }) }
         }
         if (table === 'tasks') {
           // Tasks returns data
