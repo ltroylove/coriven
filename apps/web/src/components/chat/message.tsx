@@ -4,12 +4,53 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Zap, CheckCircle2, XCircle } from 'lucide-react'
 import { useTimezone } from '@/components/providers/timezone-provider'
 import { formatInTimezone } from '@/lib/utils/timezone'
+import { InlineApprovalCard } from '@/components/approvals/inline-approval-card'
 import type { ChatMessage, ToolUseBlock, ToolResultBlock } from './types'
+
+// ---------------------------------------------------------------------------
+// parseApprovalId
+//
+// Extracts approval_id from a submit_for_approval tool-result content string.
+// The backend handler stores the result as JSON: { approval_id, status, … }.
+// Returns null on any parse/shape failure — callers fall back to normal rendering.
+// ---------------------------------------------------------------------------
+function parseApprovalId(content: string): string | null {
+  try {
+    const parsed = JSON.parse(content) as unknown
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'approval_id' in parsed &&
+      typeof (parsed as Record<string, unknown>).approval_id === 'string'
+    ) {
+      return (parsed as Record<string, unknown>).approval_id as string
+    }
+    return null
+  } catch {
+    return null
+  }
+}
 
 function ToolCallCard({ block, result }: { block: ToolUseBlock; result?: ToolResultBlock }) {
   const [expanded, setExpanded] = useState(false)
   const hasResult = result !== undefined
   const isError = result?.is_error
+
+  // submit_for_approval tool results render as an InlineApprovalCard (C7/ADR-013).
+  // Parse approval_id from the result JSON; fall back to normal rendering on
+  // any parse failure so malformed results never throw or show a blank card.
+  if (block.name === 'submit_for_approval' && result && !isError) {
+    const approvalId = parseApprovalId(result.content)
+    if (approvalId) {
+      return (
+        <InlineApprovalCard
+          approvalId={approvalId}
+          initialData={{ action_type: String(block.input.action_type ?? '') }}
+        />
+      )
+    }
+    // Malformed result content — fall through to normal tool-result rendering
+  }
 
   return (
     <div className="my-3 rounded-lg border border-amber-800/40 bg-amber-950/20 overflow-hidden text-xs">

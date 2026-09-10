@@ -236,6 +236,34 @@ async function saveMessage(
   toolCalls?: Anthropic.ToolUseBlock[],
 ): Promise<void> {
   const db = createServiceClient()
+
+  // ---------------------------------------------------------------------------
+  // Conversation lifecycle upsert (Task 9.1.2.2.1)
+  // ---------------------------------------------------------------------------
+  // Upsert the parent conversations row on every message:
+  //   - INSERT the row the first time (id, user_id); created_at defaults to now()
+  //   - On conflict (duplicate id): bump updated_at only
+  // Then, for the first user message, set the title if it is still null (COALESCE
+  // semantics: never overwrite an existing title, even on retry).
+  // Both operations are idempotent — retried persists produce no duplicates.
+  // ---------------------------------------------------------------------------
+  await db.from('conversations').upsert(
+    { id: conversationId, user_id: userId, updated_at: new Date().toISOString() },
+    { onConflict: 'id' },
+  )
+
+  if (role === 'user' && content) {
+    const title = content.trim().slice(0, 80)
+    // Only set title when the row currently has no title (COALESCE-style).
+    // .update().eq().is() is atomic: a concurrent request with the same text
+    // will produce the same title; a request after title is set is a no-op.
+    await db
+      .from('conversations')
+      .update({ title })
+      .eq('id', conversationId)
+      .is('title', null)
+  }
+
   await db.from('conversation_messages').insert({
     user_id: userId,
     conversation_id: conversationId,

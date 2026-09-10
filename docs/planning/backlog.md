@@ -30,8 +30,11 @@ The toggle should be a single env var or admin UI switch (`SENTINEL_MODE=async|s
 
 ## Design & UX
 
-### BL-002 — UI/UX overhaul
-**Area:** Epic 8 (Productization) / candidate Feature 8.7
+### BL-002 — UI/UX overhaul  ✅ PLANNED → Epic 9
+**Area:** **Epic 9: Experience Redesign** (standalone, active) — `docs/implementation/_main/epic-9-experience-redesign.md`
+**Design:** `docs/planning/bl-002-ui-ux-overhaul-design.md` (source of truth)
+
+> Promoted out of the backlog into its own active epic (2026-07-11). Design direction approved and broken into Features 9.1–9.5 with wave summaries; detailed wave specs come via `/design-waves`. Original scope notes retained below for reference.
 
 The current UI is functional and sufficient for testing but is generic (plain Tailwind, no visual identity, no design system). Needs a full design pass before public launch:
 

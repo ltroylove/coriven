@@ -510,7 +510,7 @@ async function handleSubmitForApproval(input: Input, userId: string): Promise<Ha
       content: JSON.stringify({
         approval_id: data.id,
         status: 'pending',
-        message: `Action queued for your review. Visit /approvals to approve, modify, or cancel.`,
+        message: `Action queued — review it in the card above.`,
         action_type: data.action_type,
         provider: data.provider,
         created_at: data.created_at,
