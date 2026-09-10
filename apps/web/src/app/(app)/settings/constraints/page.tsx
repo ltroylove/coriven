@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
-import { ConstraintsPageClient } from './constraints-page-client'
+import { ConstraintsPageClient } from '@/app/(app)/settings/constraints/constraints-page-client'
 import type { BehavioralConstraint } from '@personal-assistant/types'
 
-export default async function ConstraintsPage() {
+export default async function SettingsConstraintsPage() {
   const db = await createAuthServerClient()
   const { data: { user } } = await db.auth.getUser()
   if (!user) redirect('/signin')

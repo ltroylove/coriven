@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation'
 import { createAuthServerClient } from '@/lib/supabase/auth-server'
-import { MemoryPageClient } from './memory-page-client'
+import { MemoryPageClient } from '@/app/(app)/settings/memory/memory-page-client'
 import type { Memory } from '@personal-assistant/types'
 
-export default async function MemoryPage() {
+export default async function SettingsMemoryPage() {
   const db = await createAuthServerClient()
   const { data: { user } } = await db.auth.getUser()
   if (!user) redirect('/signin')

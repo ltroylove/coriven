@@ -30,8 +30,11 @@ The toggle should be a single env var or admin UI switch (`SENTINEL_MODE=async|s
 
 ## Design & UX
 
-### BL-002 — UI/UX overhaul
-**Area:** Epic 8 (Productization) / candidate Feature 8.7
+### BL-002 — UI/UX overhaul  ✅ PLANNED → Epic 9
+**Area:** **Epic 9: Experience Redesign** (standalone, active) — `docs/implementation/_main/epic-9-experience-redesign.md`
+**Design:** `docs/planning/bl-002-ui-ux-overhaul-design.md` (source of truth)
+
+> Promoted out of the backlog into its own active epic (2026-07-11). Design direction approved and broken into Features 9.1–9.5 with wave summaries; detailed wave specs come via `/design-waves`. Original scope notes retained below for reference.
 
 The current UI is functional and sufficient for testing but is generic (plain Tailwind, no visual identity, no design system). Needs a full design pass before public launch:
 
@@ -86,5 +89,22 @@ When a user asks "what can you do?", "how do I add a task?", "what is a constrai
 **Recommended starting point:** Option 1 (static block) to validate that the assistant actually answers correctly, then graduate to Option 2 or 3 if the token cost is a problem or the docs outgrow the context window.
 
 **Why:** Users will ask the assistant about itself constantly. Getting this wrong erodes trust immediately — if the assistant doesn't know its own app, users assume it doesn't know anything else either.
+
+---
+
+### BL-005 — Assistant should handle general conversation, not deflect to "I only do tasks"
+**Area:** Epic 2 (Persistent Memory) / Chat system prompt & assistant persona — related to [[BL-003]]
+
+The assistant currently over-refuses anything outside task/reminder/goal management. When the user chats about a general topic (e.g. a survival game), it bounces back with a canned deflection like:
+
+> "That's a fun survival game! However, I'm a personal assistant focused on helping you manage **tasks, reminders, and goals**."
+
+This makes Coriven feel narrow, scripted, and less capable than a basic chatbot. It should be a **full conversational assistant** — able to engage naturally with **any** topic — that *also* happens to be excellent at tasks, reminders, and goals. The productivity focus should be a strength it brings to the conversation, not a cage that redirects the user away from what they actually asked.
+
+**This applies to ALL chatting**, not just the survival-game example — any general/casual/off-topic message should get a real, helpful answer, not a scope-refusal.
+
+**Fix:** Revise the chat system prompt's scoping/persona instructions so the assistant answers general questions directly and personably. Only steer toward productivity features when it's genuinely relevant or helpful, never as a refusal. Keep the assistant grounded (no hallucinating product facts — see [[BL-003]]) while letting it be a normal, well-rounded conversational partner.
+
+**Why:** General chat is table stakes for an AI assistant. A canned "I only do tasks" deflection erodes trust the same way not knowing its own product does (BL-003) — users conclude the assistant is rigid and unintelligent, and stop reaching for it.
 
 ---
