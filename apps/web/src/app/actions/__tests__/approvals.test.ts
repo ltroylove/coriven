@@ -91,6 +91,97 @@ function makeSupabaseWithItem(
 }
 
 // ---------------------------------------------------------------------------
+// getApproval mock factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a minimal Supabase mock for getApproval's read path:
+ *   from('approval_queue').select(...).eq('id', id).single()
+ *
+ * When row is null the mock simulates what Supabase returns when RLS hides the
+ * row (null data + non-null error), so getApproval returns { error }.
+ */
+function makeSupabaseForGetApproval(row: Record<string, unknown> | null) {
+  const mockSingle = vi.fn().mockResolvedValue(
+    row
+      ? { data: row, error: null }
+      : { data: null, error: { message: 'No rows returned' } },
+  )
+  const mockEq = vi.fn().mockReturnValue({ single: mockSingle })
+  const mockSelect = vi.fn().mockReturnValue({ eq: mockEq })
+  const mockFrom = vi.fn().mockReturnValue({ select: mockSelect })
+
+  return {
+    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
+    from: mockFrom,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// getApproval
+// ---------------------------------------------------------------------------
+
+describe('getApproval', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('returns the row for the owning user', async () => {
+    const { createAuthServerClient } = await import('@/lib/supabase/auth-server')
+    const approvalRow = {
+      id: 'approval-1',
+      action_type: 'send_email',
+      provider: 'gmail',
+      payload: { to: 'a@example.com', subject: 'Hi', body: 'Hello' },
+      ai_summary: 'Send an email to Alice',
+      status: 'pending',
+      created_at: '2026-07-11T00:00:00Z',
+    }
+    vi.mocked(createAuthServerClient).mockResolvedValue(
+      makeSupabaseForGetApproval(approvalRow) as never,
+    )
+
+    const { getApproval } = await import('../approvals')
+    const result = await getApproval('approval-1')
+
+    expect('error' in result).toBe(false)
+    if ('error' in result) return
+    expect(result.id).toBe('approval-1')
+    expect(result.action_type).toBe('send_email')
+    expect(result.provider).toBe('gmail')
+    expect(result.status).toBe('pending')
+    expect(result.ai_summary).toBe('Send an email to Alice')
+    expect(result.created_at).toBe('2026-07-11T00:00:00Z')
+  })
+
+  it('returns { error } when the row is missing (RLS hides foreign row)', async () => {
+    const { createAuthServerClient } = await import('@/lib/supabase/auth-server')
+    vi.mocked(createAuthServerClient).mockResolvedValue(
+      makeSupabaseForGetApproval(null) as never,
+    )
+
+    const { getApproval } = await import('../approvals')
+    const result = await getApproval('foreign-approval-id')
+
+    expect('error' in result).toBe(true)
+    if (!('error' in result)) return
+    expect(result.error).toMatch(/not found|access denied/i)
+  })
+
+  it('returns { error } when unauthenticated', async () => {
+    const { createAuthServerClient } = await import('@/lib/supabase/auth-server')
+    vi.mocked(createAuthServerClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) },
+    } as never)
+
+    const { getApproval } = await import('../approvals')
+    const result = await getApproval('approval-1')
+
+    expect('error' in result).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // approveAction
 // ---------------------------------------------------------------------------
 

@@ -67,7 +67,7 @@ export default async function GoalsPage() {
                 <div className="rounded-lg border border-dashed border-gray-800 p-4 text-center">
                   <p className="text-xs text-gray-600 mb-2">No goals yet</p>
                   <Link
-                    href="/chat"
+                    href="/"
                     className="text-xs text-blue-500 hover:text-blue-400 transition-colors"
                   >
                     Add a goal via chat
@@ -104,7 +104,7 @@ export default async function GoalsPage() {
               <div className="rounded-lg border border-dashed border-gray-800 p-4 text-center">
                 <p className="text-xs text-gray-600 mb-2">No goals yet</p>
                 <Link
-                  href="/chat"
+                  href="/"
                   className="text-xs text-blue-500 hover:text-blue-400 transition-colors"
                 >
                   Add a goal via chat
@@ -133,7 +133,7 @@ export default async function GoalsPage() {
           <div className="flex-1 flex flex-col items-center justify-center py-16 text-center">
             <p className="text-sm text-gray-500 mb-2">No life areas or goals yet.</p>
             <Link
-              href="/chat"
+              href="/"
               className="text-sm text-blue-500 hover:text-blue-400 transition-colors"
             >
               Create your first goal via chat

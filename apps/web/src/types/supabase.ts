@@ -231,7 +231,15 @@ export type Database = {
           tool_calls?: Json | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "conversation_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       conversation_summaries: {
         Row: {
@@ -256,6 +264,36 @@ export type Database = {
           id?: string
           message_range?: unknown
           summary?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      conversations: {
+        Row: {
+          archived_at: string | null
+          created_at: string
+          id: string
+          pinned_at: string | null
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          archived_at?: string | null
+          created_at?: string
+          id?: string
+          pinned_at?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          archived_at?: string | null
+          created_at?: string
+          id?: string
+          pinned_at?: string | null
+          title?: string | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
