@@ -92,6 +92,16 @@ function makeToolPermissionsClient(
           }),
         }
       }
+      if (table === 'profiles') {
+        // engine.ts reads profiles.sentinel_mode once per turn; fail-safe default is 'async'
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({ data: { sentinel_mode: 'async' }, error: null }),
+            }),
+          }),
+        }
+      }
       if (table === 'conversation_messages') {
         return {
           insert: vi.fn().mockResolvedValue({ error: null }),
@@ -328,6 +338,16 @@ describe('Task 7.4.1.2.1 — Multi-store tool calls within a single turn', () =>
             }),
           }
         }
+        if (table === 'profiles') {
+          // engine.ts reads profiles.sentinel_mode once per turn; fail-safe default is 'async'
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                single: vi.fn().mockResolvedValue({ data: { sentinel_mode: 'async' }, error: null }),
+              }),
+            }),
+          }
+        }
         if (table === 'conversation_messages') {
           return { insert: vi.fn().mockResolvedValue({ error: null }) }
         }
@@ -437,6 +457,16 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockResolvedValue({ data: permissions, error: null }),
+            }),
+          }
+        }
+        if (table === 'profiles') {
+          // engine.ts reads profiles.sentinel_mode once per turn; fail-safe default is 'async'
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                single: vi.fn().mockResolvedValue({ data: { sentinel_mode: 'async' }, error: null }),
+              }),
             }),
           }
         }
@@ -568,6 +598,16 @@ describe('Task 7.4.1.4.1 — Honesty enforcement', () => {
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockResolvedValue({ data: permissions, error: null }),
+            }),
+          }
+        }
+        if (table === 'profiles') {
+          // engine.ts reads profiles.sentinel_mode once per turn; fail-safe default is 'async'
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                single: vi.fn().mockResolvedValue({ data: { sentinel_mode: 'async' }, error: null }),
+              }),
             }),
           }
         }
